@@ -190,6 +190,52 @@ def test_admin_can_only_create_user_tokens(test_session_factory) -> None:
         assert ok.json()["questionnaire_version_ids"] == [version_id]
 
 
+def test_superadmin_admin_token_can_include_scope_and_assigns_on_signup(test_session_factory) -> None:
+    settings = get_settings()
+
+    with test_session_factory() as db:
+        _, bootstrap_token = issue_signup_token(
+            db,
+            role=Role.SUPERADMIN,
+            created_by_id=None,
+            expires_in_minutes=60,
+            token_pepper=settings.token_pepper,
+        )
+        db.commit()
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+        version_id = _create_published_questionnaire_version(client, "Admin scope target")
+
+        admin_token_resp = client.post(
+            "/api/admin/signup-tokens",
+            json={
+                "role": "admin",
+                "expires_in_minutes": 60,
+                "questionnaire_version_ids": [version_id],
+            },
+        )
+        assert admin_token_resp.status_code == 200
+        assert admin_token_resp.json()["questionnaire_version_ids"] == [version_id]
+
+        created_admin = _signup(client, "designer_scoped", token=admin_token_resp.json()["token"])
+        assert created_admin["user"]["role"] == "admin"
+
+    with test_session_factory() as db:
+        admin_user = db.scalar(select(User).where(User.username == "designer_scoped"))
+        assert admin_user is not None
+        assignments = (
+            db.execute(
+                select(UserAssignment.questionnaire_version_id).where(
+                    UserAssignment.user_id == admin_user.id
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert assignments == [version_id]
+
+
 def test_superadmin_user_management_endpoints(test_session_factory) -> None:
     settings = get_settings()
 

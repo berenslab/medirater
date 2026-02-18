@@ -106,13 +106,13 @@ def create_signup_token(
             detail="User signup tokens must include questionnaire visibility scope",
         )
 
-    if payload.role != Role.USER and normalized_scope:
+    if payload.role == Role.SUPERADMIN and normalized_scope:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Questionnaire visibility scope is only valid for user signup tokens",
+            detail="Questionnaire visibility scope is not valid for superadmin tokens",
         )
 
-    if payload.role == Role.USER:
+    if payload.role in {Role.USER, Role.ADMIN} and normalized_scope:
         rows = db.execute(
             select(QuestionnaireVersion, Questionnaire.owner_admin_id)
             .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)

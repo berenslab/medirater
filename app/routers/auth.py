@@ -173,7 +173,7 @@ def signup_complete(
     )
 
     if token_record:
-        if token_record.role_to_grant == Role.USER:
+        if token_record.role_to_grant in {Role.USER, Role.ADMIN}:
             for questionnaire_version_id in deserialize_visibility_scope(token_record.visibility_scope_json):
                 db.add(
                     UserAssignment(

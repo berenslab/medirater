@@ -198,7 +198,7 @@
 
       <article class="card" id="invite-card" style="display:none;">
         <h2>Signup tokens and questionnaire visibility</h2>
-        <p>For user tokens, select which published questionnaires the new user can access.</p>
+        <p>For user/admin tokens, select which published questionnaires the new account can access.</p>
 
         <div class="row">
           <div style="flex:1;min-width:180px;">
@@ -425,13 +425,20 @@
 
     function syncTokenRole() {
       const role = document.getElementById("token-role").value;
-      const isUserRole = role === "user";
+      const supportsScope = role !== "superadmin";
       for (const input of document.querySelectorAll("input[name='token-scope-version']")) {
-        input.disabled = !isUserRole;
+        input.disabled = !supportsScope;
       }
-      document.getElementById("token-scope-hint").textContent = isUserRole
-        ? "Select one or more questionnaires for this user token."
-        : "Questionnaire visibility applies only to user tokens.";
+      if (role === "user") {
+        document.getElementById("token-scope-hint").textContent =
+          "Select one or more questionnaires for this user token.";
+      } else if (role === "admin") {
+        document.getElementById("token-scope-hint").textContent =
+          "Optional: select questionnaires this admin should immediately access.";
+      } else {
+        document.getElementById("token-scope-hint").textContent =
+          "Questionnaire visibility is not applicable for superadmin tokens.";
+      }
     }
 
     function renderTokenRows(items) {
@@ -582,7 +589,7 @@
       try {
         const role = document.getElementById("token-role").value;
         const expires = Number(document.getElementById("token-expiry").value || 60);
-        const scope = role === "user" ? getSelectedScopeVersionIds() : [];
+        const scope = role === "superadmin" ? [] : getSelectedScopeVersionIds();
 
         if (role === "user" && scope.length === 0) {
           throw new Error("User tokens require at least one selected questionnaire.");

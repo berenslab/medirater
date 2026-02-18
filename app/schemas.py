@@ -368,6 +368,7 @@ class AssetOut(BaseModel):
 
 
 class BulkRecipeType(str, Enum):
+    INDEXED_SUFFIX_SETS = "indexed_suffix_sets"
     SINGLE_PER_FILE = "single_per_file"
     TRIPLET_BY_SUFFIX = "triplet_by_suffix"
     PAIRED_BY_FILENAME = "paired_by_filename"

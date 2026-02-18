@@ -277,16 +277,25 @@
         </article>
 
         <article class="card">
-          <h2>Bulk dataset preset</h2>
-          <p class="muted">Choose the file grouping rule that matches your uploaded filenames.</p>
+          <h2>Bulk dataset grouping</h2>
+          <p class="muted">Use numbered filenames: `1.png`, `2.png` or `1a.png`, `1b.png`, `2a.png`, `2b.png`.</p>
 
-          <label for="dataset-preset">Preset</label>
-          <select id="dataset-preset">
-            <option value="single_per_file">Single image per question (e.g. 1.png, 2.png)</option>
-            <option value="triplet_by_suffix">Triplet by suffix (e.g. 1a/1b/1c)</option>
-            <option value="paired_by_filename">Paired by folder+filename</option>
-            <option value="case_with_patches">Case with patches (img/patch folders)</option>
-          </select>
+          <label for="images-per-case">Images per case</label>
+          <input
+            id="images-per-case"
+            type="number"
+            min="1"
+            step="1"
+            placeholder="Auto-inferred from uploaded filenames"
+          />
+          <div id="images-per-case-hint" class="small">Will infer after upload.</div>
+
+          <label for="stimulus-slot-labels">Image labels per slot (optional)</label>
+          <input
+            id="stimulus-slot-labels"
+            placeholder="Original|Annotated or Better|Original|Worse"
+          />
+          <div class="small">If provided, number of labels must equal images per case.</div>
 
           <label for="replace-existing">Replace existing questions when apply</label>
           <select id="replace-existing">
@@ -673,6 +682,69 @@
       }
     }
 
+    function inferImagesPerCaseFromAssets(assets) {
+      const countsByCaseIndex = new Map();
+      const indexedPattern = /^(\d+)([A-Za-z]?)$/;
+
+      for (const asset of assets || []) {
+        const source = String(asset?.original_path || asset?.file_name || "").replaceAll("\\", "/");
+        const fileName = source.split("/").pop() || "";
+        const stem = fileName.replace(/\.[^.]+$/, "");
+        const match = stem.match(indexedPattern);
+        if (!match) {
+          continue;
+        }
+        const caseIndex = Number.parseInt(match[1], 10);
+        if (!Number.isFinite(caseIndex) || caseIndex < 1) {
+          continue;
+        }
+        countsByCaseIndex.set(caseIndex, (countsByCaseIndex.get(caseIndex) || 0) + 1);
+      }
+
+      if (!countsByCaseIndex.size) {
+        return null;
+      }
+
+      const counts = Array.from(countsByCaseIndex.values());
+      const frequency = new Map();
+      for (const count of counts) {
+        frequency.set(count, (frequency.get(count) || 0) + 1);
+      }
+
+      let inferredCount = 1;
+      let bestFrequency = -1;
+      for (const [count, freq] of frequency.entries()) {
+        if (freq > bestFrequency || (freq === bestFrequency && count > inferredCount)) {
+          inferredCount = count;
+          bestFrequency = freq;
+        }
+      }
+
+      const consistent = counts.every((count) => count === inferredCount);
+      return {
+        imagesPerCase: inferredCount,
+        caseCount: countsByCaseIndex.size,
+        consistent,
+      };
+    }
+
+    function refreshImagesPerCaseInference() {
+      const input = document.getElementById("images-per-case");
+      const hint = document.getElementById("images-per-case-hint");
+      const inferred = inferImagesPerCaseFromAssets(state.assets || []);
+
+      if (!inferred) {
+        input.value = "";
+        hint.textContent = "Could not infer yet. Use filenames like 1.png or 1a.png/1b.png.";
+        return;
+      }
+
+      input.value = String(inferred.imagesPerCase);
+      hint.textContent = inferred.consistent
+        ? `Auto-inferred ${inferred.imagesPerCase} image(s) per case from ${inferred.caseCount} case(s).`
+        : `Auto-inferred ${inferred.imagesPerCase} image(s) per case (mixed set sizes detected).`;
+    }
+
     function renderPreview() {
       const tbody = document.getElementById("preview-tbody");
       tbody.innerHTML = "";
@@ -734,6 +806,7 @@
       const items = await requestJson(`/api/admin/assets?limit=500&questionnaire_id=${encodeURIComponent(QUESTIONNAIRE_ID)}`);
       state.assets = items || [];
       renderAssets();
+      refreshImagesPerCaseInference();
     }
 
     async function uploadFiles(files) {
@@ -838,34 +911,34 @@
     }
 
     function getRecipeConfigForPreset() {
-      const preset = document.getElementById("dataset-preset").value;
-      if (preset === "single_per_file") {
-        return {
-          recipe_type: "single_per_file",
-          recipe_config: {},
-        };
+      const imagesPerCaseRaw = document.getElementById("images-per-case").value.trim();
+      let imagesPerCase = Number.parseInt(imagesPerCaseRaw || "", 10);
+      if (!Number.isFinite(imagesPerCase) || imagesPerCase < 1) {
+        const inferred = inferImagesPerCaseFromAssets(state.assets || []);
+        if (inferred) {
+          imagesPerCase = inferred.imagesPerCase;
+          document.getElementById("images-per-case").value = String(imagesPerCase);
+        }
       }
-      if (preset === "triplet_by_suffix") {
-        return {
-          recipe_type: "triplet_by_suffix",
-          recipe_config: { suffixes: ["a", "b", "c"], strict: true },
-        };
+      if (!Number.isFinite(imagesPerCase) || imagesPerCase < 1) {
+        throw new Error("Could not infer images per case. Use numbered filenames like 1.png or 1a/1b.");
       }
-      if (preset === "paired_by_filename") {
-        return {
-          recipe_type: "paired_by_filename",
-          recipe_config: { left_folder: "no_support", right_folder: "with_support", strict: true },
-        };
-      }
-      if (preset === "case_with_patches") {
-        return {
-          recipe_type: "case_with_patches",
-          recipe_config: { img_folder: "img", patch_folder: "patch", strict: true },
-        };
+      const rawLabels = document.getElementById("stimulus-slot-labels").value || "";
+      const labelSource = rawLabels.includes("\n")
+        ? rawLabels.split("\n")
+        : rawLabels.includes("|")
+          ? rawLabels.split("|")
+          : rawLabels.split(",");
+      const slotLabels = labelSource.map((item) => item.trim()).filter(Boolean);
+      if (slotLabels.length && slotLabels.length !== imagesPerCase) {
+        throw new Error("Image labels count must equal images per case.");
       }
       return {
-        recipe_type: "single_per_file",
-        recipe_config: {},
+        recipe_type: "indexed_suffix_sets",
+        recipe_config: {
+          images_per_case: imagesPerCase,
+          ...(slotLabels.length ? { stimulus_slot_labels: slotLabels } : {}),
+        },
       };
     }
 
@@ -1088,9 +1161,9 @@
           hasCases ? "ok" : "warn",
         );
         const warningMessages = preview.warnings || [];
-        const hasSuffixMismatch = warningMessages.some((item) => item.includes("does not match suffix pattern"));
-        const hint = !hasCases && hasSuffixMismatch
-          ? " Hint: your files look like single images (e.g. 1.png). Use the 'Single image per question' preset."
+        const hasPatternMismatch = warningMessages.some((item) => item.includes("filename stem must be numeric"));
+        const hint = !hasCases && hasPatternMismatch
+          ? " Hint: use names like 1.png, 2.png or 1a.png, 1b.png with the right images-per-case value."
           : "";
         setStatus(
           "bulk-warnings",

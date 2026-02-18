@@ -132,7 +132,7 @@ def test_questionnaire_assets_require_delete_before_reupload(test_session_factor
         assert upload_after_delete.status_code == 200
 
 
-def test_triplet_recipe_preview_and_apply(test_session_factory) -> None:
+def test_indexed_suffix_sets_recipe_preview_and_apply(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 
     with TestClient(app) as client:
@@ -173,9 +173,9 @@ def test_triplet_recipe_preview_and_apply(test_session_factory) -> None:
         preview = client.post(
             f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/bulk-recipes/preview",
             json={
-                "recipe_type": "triplet_by_suffix",
+                "recipe_type": "indexed_suffix_sets",
                 "asset_ids": asset_ids,
-                "recipe_config": {"suffixes": ["a", "b", "c"], "strict": True},
+                "recipe_config": {"images_per_case": 3},
                 "question_templates": [
                     {
                         "prompt_template": "Case {case_index}/{case_total}: Which image is AI generated?",
@@ -199,9 +199,9 @@ def test_triplet_recipe_preview_and_apply(test_session_factory) -> None:
         applied = client.post(
             f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/bulk-recipes/apply",
             json={
-                "recipe_type": "triplet_by_suffix",
+                "recipe_type": "indexed_suffix_sets",
                 "asset_ids": asset_ids,
-                "recipe_config": {"suffixes": ["a", "b", "c"], "strict": True},
+                "recipe_config": {"images_per_case": 3},
                 "replace_existing_questions": True,
                 "question_templates": [
                     {
@@ -227,6 +227,139 @@ def test_triplet_recipe_preview_and_apply(test_session_factory) -> None:
         for question in questions:
             assert len(question["config"]["stimulus_asset_ids"]) == 3
             assert question["question_type"] == "single_choice"
+
+
+def test_indexed_suffix_sets_requires_consecutive_numbering(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+        admin_token = client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        ).json()["token"]
+
+    with TestClient(app) as client:
+        _signup(client, "designer_gap", token=admin_token)
+        created = client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Number gap bulk",
+                "description": "bulk test",
+                "instructions_markdown": "instr",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        asset_ids = _upload_assets(
+            client,
+            questionnaire_id,
+            [
+                "Task/1.png",
+                "Task/3.png",
+            ],
+        )
+
+        preview = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/bulk-recipes/preview",
+            json={
+                "recipe_type": "indexed_suffix_sets",
+                "asset_ids": asset_ids,
+                "recipe_config": {"images_per_case": 1},
+                "question_templates": [
+                    {
+                        "prompt_template": "Case {case_index}/{case_total}: any finding?",
+                        "question_type": "single_choice",
+                        "is_required": True,
+                        "choices": [
+                            {"label": "Yes", "value": "yes"},
+                            {"label": "No", "value": "no"},
+                        ],
+                    }
+                ],
+            },
+        )
+        assert preview.status_code == 200
+        payload = preview.json()
+        assert len(payload["cases"]) == 2
+        assert any("Missing case indices: 2" in warning for warning in payload["warnings"])
+
+
+def test_indexed_suffix_sets_custom_stimulus_labels_are_saved(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+        admin_token = client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        ).json()["token"]
+
+    with TestClient(app) as client:
+        _signup(client, "designer_labels", token=admin_token)
+        created = client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Custom stimulus labels",
+                "description": "bulk test",
+                "instructions_markdown": "instr",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        asset_ids = _upload_assets(
+            client,
+            questionnaire_id,
+            [
+                "Task/1a.png",
+                "Task/1b.png",
+                "Task/2a.png",
+                "Task/2b.png",
+            ],
+        )
+
+        payload = {
+            "recipe_type": "indexed_suffix_sets",
+            "asset_ids": asset_ids,
+            "recipe_config": {
+                "images_per_case": 2,
+                "stimulus_slot_labels": ["Original", "Annotated"],
+            },
+            "replace_existing_questions": True,
+            "question_templates": [
+                {
+                    "prompt_template": "Case {case_index}/{case_total}",
+                    "question_type": "single_choice",
+                    "is_required": True,
+                    "choices": [
+                        {"label": "Original", "value": "original"},
+                        {"label": "Annotated", "value": "annotated"},
+                    ],
+                }
+            ],
+        }
+
+        applied = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/bulk-recipes/apply",
+            json=payload,
+        )
+        assert applied.status_code == 200
+        assert applied.json()["created_questions"] == 2
+
+        detail = client.get(f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}")
+        assert detail.status_code == 200
+        questions = detail.json()["questions"]
+        assert len(questions) == 2
+        assert all(
+            question["config"].get("stimulus_labels") == ["Original", "Annotated"]
+            for question in questions
+        )
 
 
 def test_case_with_patches_recipe_preview_and_apply(test_session_factory) -> None:

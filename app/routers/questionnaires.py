@@ -334,10 +334,16 @@ def _build_bulk_preview(
     question_templates: list[BulkRecipeQuestionTemplate],
     patch_question_template: BulkRecipeQuestionTemplate | None,
     recipe_type: str,
+    recipe_config: dict,
 ) -> list[BulkRecipeCasePreview]:
     preview_cases: list[BulkRecipeCasePreview] = []
     total_cases = len(grouped_cases)
     for case_index, grouped_case in enumerate(grouped_cases, start=1):
+        stimulus_labels = [
+            str(item).strip()
+            for item in (grouped_case.stimulus_labels or recipe_config.get("stimulus_slot_labels", []))
+            if str(item).strip()
+        ]
         context = {
             "case_index": case_index,
             "case_total": total_cases,
@@ -345,6 +351,10 @@ def _build_bulk_preview(
             "stimulus_count": len(grouped_case.stimulus_asset_ids),
             "patch_total": len(grouped_case.patch_asset_ids),
         }
+        if stimulus_labels:
+            context["stimulus_labels"] = ", ".join(stimulus_labels)
+            for label_index, label in enumerate(stimulus_labels, start=1):
+                context[f"stimulus_label_{label_index}"] = label
 
         generated_questions: list[BulkGeneratedQuestionPreview] = []
         for template in question_templates:
@@ -354,6 +364,7 @@ def _build_bulk_preview(
                 "case_key": grouped_case.case_key,
                 "recipe_type": recipe_type,
                 "stimulus_asset_ids": grouped_case.stimulus_asset_ids,
+                **({"stimulus_labels": stimulus_labels} if stimulus_labels else {}),
                 **template.config,
             }
             generated_questions.append(
@@ -382,6 +393,7 @@ def _build_bulk_preview(
                     "case_key": grouped_case.case_key,
                     "recipe_type": recipe_type,
                     "stimulus_asset_ids": grouped_case.stimulus_asset_ids,
+                    **({"stimulus_labels": stimulus_labels} if stimulus_labels else {}),
                     "patch_asset_id": patch_asset_id,
                     "patch_index": patch_index,
                     **patch_question_template.config,
@@ -1188,6 +1200,7 @@ def preview_bulk_recipe(
         question_templates=payload.question_templates,
         patch_question_template=payload.patch_question_template,
         recipe_type=payload.recipe_type.value,
+        recipe_config=payload.recipe_config,
     )
     return BulkRecipePreviewResponse(cases=preview_cases, warnings=grouping_result.warnings)
 
@@ -1229,6 +1242,7 @@ def apply_bulk_recipe(
         question_templates=payload.question_templates,
         patch_question_template=payload.patch_question_template,
         recipe_type=payload.recipe_type.value,
+        recipe_config=payload.recipe_config,
     )
 
     if not preview_cases:

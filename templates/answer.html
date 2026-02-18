@@ -122,11 +122,21 @@
       gap: 8px;
       margin: 8px 0;
     }
+    .media-item {
+      margin: 0;
+    }
     .media-strip img {
       width: 100%;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: #f8fbff;
+    }
+    .media-label {
+      margin-top: 4px;
+      font-size: 0.84rem;
+      color: #334357;
+      text-align: center;
+      font-weight: 600;
     }
     label.choice {
       display: flex;
@@ -650,10 +660,27 @@
             first_position: question.position,
             questions: [],
             asset_ids: [],
+            asset_labels_by_id: {},
           });
         }
         const group = byKey.get(caseKey);
         group.questions.push(question);
+
+        const stimulusIds = Array.isArray(question?.config?.stimulus_asset_ids)
+          ? question.config.stimulus_asset_ids
+          : [];
+        const stimulusLabels = Array.isArray(question?.config?.stimulus_labels)
+          ? question.config.stimulus_labels
+          : [];
+        for (let index = 0; index < stimulusIds.length; index += 1) {
+          const assetId = stimulusIds[index];
+          if (typeof assetId !== "string" || !assetId) continue;
+          const labelRaw = stimulusLabels[index];
+          const label = typeof labelRaw === "string" ? labelRaw.trim() : "";
+          if (label && !group.asset_labels_by_id[assetId]) {
+            group.asset_labels_by_id[assetId] = label;
+          }
+        }
 
         const assetIds = getReferencedAssetIds(question);
         for (const assetId of assetIds) {
@@ -803,10 +830,23 @@
         const strip = document.createElement("div");
         strip.className = "media-strip";
         for (const assetId of currentCase.asset_ids) {
+          const item = document.createElement("figure");
+          item.className = "media-item";
+
           const img = document.createElement("img");
           img.alt = `Case asset ${assetId}`;
           img.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${assetId}/content`;
-          strip.appendChild(img);
+          item.appendChild(img);
+
+          const labelText = currentCase.asset_labels_by_id?.[assetId];
+          if (typeof labelText === "string" && labelText.trim()) {
+            const caption = document.createElement("figcaption");
+            caption.className = "media-label";
+            caption.textContent = labelText.trim();
+            item.appendChild(caption);
+          }
+
+          strip.appendChild(item);
         }
         root.appendChild(strip);
 
