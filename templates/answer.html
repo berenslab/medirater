@@ -809,12 +809,12 @@
             <input type="checkbox" data-magnifier-enabled />
             Magnifier
           </label>
-          <label>
+          <label data-magnifier-setting>
             Size
             <input type="range" min="60" max="260" step="10" value="110" data-magnifier-size />
             <span data-magnifier-size-value>110px</span>
           </label>
-          <label>
+          <label data-magnifier-setting>
             Zoom
             <input type="range" min="1.2" max="8" step="0.1" value="2.0" data-magnifier-zoom />
             <span data-magnifier-zoom-value>2.0x</span>
@@ -829,7 +829,11 @@
       const sizeValue = wrapper.querySelector("[data-magnifier-size-value]");
       const zoomValue = wrapper.querySelector("[data-magnifier-zoom-value]");
       const strip = wrapper.querySelector("[data-magnifier-strip]");
+      const settingLabels = Array.from(wrapper.querySelectorAll("[data-magnifier-setting]"));
       strip.style.display = "none";
+      for (const label of settingLabels) {
+        label.style.display = "none";
+      }
 
       const cells = [];
       let lastNormX = 0.5;
@@ -947,7 +951,11 @@
       }
 
       enabledInput.addEventListener("change", () => {
-        strip.style.display = enabledInput.checked ? "grid" : "none";
+        const enabled = enabledInput.checked;
+        strip.style.display = enabled ? "grid" : "none";
+        for (const label of settingLabels) {
+          label.style.display = enabled ? "inline-flex" : "none";
+        }
         if (!enabledInput.checked) {
           clearCanvases();
           hasPointer = false;
