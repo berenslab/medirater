@@ -43,16 +43,6 @@
       gap: 12px;
       flex-wrap: wrap;
     }
-    .header-main {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      align-items: flex-start;
-    }
-    a.top-back {
-      padding: 6px 10px;
-      font-size: 0.84rem;
-    }
     h1 { margin: 0; font-size: 1.2rem; }
     .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
     nav { display: flex; gap: 10px; }
@@ -188,12 +178,9 @@
 <body>
   <main class="container">
     <section class="header">
-      <div class="header-main">
-        <a class="button-link secondary top-back" href="/assigned">Back to assigned</a>
-        <div>
-          <h1>Answer Questionnaire</h1>
-          <div id="headline" class="meta">Loading questionnaire...</div>
-        </div>
+      <div>
+        <h1>Answer Questionnaire</h1>
+        <div id="headline" class="meta">Loading questionnaire...</div>
       </div>
       <nav>
         {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
@@ -204,6 +191,10 @@
     </section>
 
     <section class="content">
+      <div style="margin-bottom: 10px;">
+        <a class="button-link secondary" href="/assigned">Back to assigned</a>
+      </div>
+
       <article class="card">
         <h2 id="progress-title">Loading...</h2>
         <div id="question-root"></div>
