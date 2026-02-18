@@ -48,7 +48,6 @@ class WebAuthnBeginResponse(BaseModel):
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
     username: str
     role: Role
     created_at: datetime
@@ -109,7 +108,6 @@ class SignupTokenListResponse(BaseModel):
 class AdminManagedUserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
     username: str
     role: Role
     is_active: bool
@@ -122,7 +120,7 @@ class AdminUpdateUserRequest(BaseModel):
 
 
 class AssignmentCreateRequest(BaseModel):
-    target_user_id: str = Field(min_length=1)
+    target_username: str = Field(min_length=1)
     questionnaire_version_id: str = Field(min_length=1)
     is_active: bool = True
 
@@ -133,14 +131,13 @@ class AssignmentUpdateRequest(BaseModel):
 
 class AssignmentOut(BaseModel):
     id: str
-    user_id: str
     username: str
     user_role: Role
     questionnaire_id: str
     questionnaire_version_id: str
     questionnaire_title: str
     questionnaire_version_number: int
-    granted_by_id: str | None
+    granted_by_username: str | None
     is_active: bool
     created_at: datetime
 
@@ -196,12 +193,14 @@ class QuestionOut(BaseModel):
 
 class QuestionnaireCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+    slug: str | None = Field(default=None, min_length=1, max_length=220)
     description: str | None = None
     instructions_markdown: str = ""
 
 
 class QuestionnaireUpdateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+    slug: str | None = Field(default=None, min_length=1, max_length=220)
     description: str | None = None
 
 
@@ -215,7 +214,8 @@ class QuestionnaireVersionUpdateRequest(BaseModel):
 
 class QuestionnaireSummaryOut(BaseModel):
     id: str
-    owner_admin_id: str
+    owner_admin_username: str
+    slug: str
     title: str
     description: str | None
     is_archived: bool
@@ -232,7 +232,6 @@ class QuestionnaireVersionSummaryOut(BaseModel):
     version_number: int
     status: QuestionnaireVersionStatus
     instructions_markdown: str
-    created_by_id: str
     published_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -244,7 +243,8 @@ class QuestionnaireVersionDetailOut(QuestionnaireVersionSummaryOut):
 
 class QuestionnaireDetailOut(BaseModel):
     id: str
-    owner_admin_id: str
+    owner_admin_username: str
+    slug: str
     title: str
     description: str | None
     is_archived: bool
@@ -258,7 +258,6 @@ class AdminResponseSummaryOut(BaseModel):
     questionnaire_id: str
     questionnaire_version_id: str
     questionnaire_version_number: int
-    user_id: str
     username: str
     user_role: Role
     submitted_at: datetime
@@ -278,7 +277,6 @@ class AdminResponseDetailOut(BaseModel):
     questionnaire_id: str
     questionnaire_version_id: str
     questionnaire_version_number: int
-    user_id: str
     username: str
     user_role: Role
     submitted_at: datetime
@@ -339,7 +337,7 @@ class SubmitQuestionnaireResponse(BaseModel):
 
 class AssetOut(BaseModel):
     id: str
-    owner_user_id: str
+    owner_username: str
     file_name: str
     original_path: str | None
     mime_type: str

@@ -1,7 +1,11 @@
 import json
+import csv
+import io
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response as FastAPIResponse
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
@@ -46,6 +50,7 @@ from app.schemas import (
     QuestionnaireVersionSummaryOut,
     QuestionnaireVersionUpdateRequest,
 )
+from app.security import normalize_username
 from app.services.bulk_recipe_service import GroupedCase, group_assets_for_recipe
 
 router = APIRouter(prefix="/api/admin/questionnaires", tags=["questionnaires"])
@@ -76,6 +81,56 @@ def _parse_json_any(value: str) -> Any:
         return None
 
 
+def _stringify_answer_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return json.dumps(value)
+
+
+def _normalize_slug(raw_slug: str) -> str:
+    base = raw_slug.strip().lower()
+    base = re.sub(r"[^a-z0-9]+", "-", base)
+    base = base.strip("-")
+    if not base:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Slug must contain at least one letter or number",
+        )
+    if len(base) > 220:
+        base = base[:220].rstrip("-")
+    if not base:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Slug must contain at least one letter or number",
+        )
+    return base
+
+
+def _build_unique_slug(
+    db: Session,
+    *,
+    requested_slug: str,
+    exclude_questionnaire_id: str | None = None,
+) -> str:
+    base_slug = _normalize_slug(requested_slug)
+    candidate = base_slug
+    suffix = 2
+    while True:
+        stmt = select(Questionnaire.id).where(Questionnaire.slug == candidate)
+        if exclude_questionnaire_id:
+            stmt = stmt.where(Questionnaire.id != exclude_questionnaire_id)
+        existing = db.scalar(stmt)
+        if not existing:
+            return candidate
+
+        suffix_text = f"-{suffix}"
+        allowed_base_len = max(1, 220 - len(suffix_text))
+        candidate = f"{base_slug[:allowed_base_len].rstrip('-')}{suffix_text}"
+        suffix += 1
+
+
 def _to_question_out(question: Question) -> QuestionOut:
     choices = sorted(question.choices, key=lambda item: item.position)
     return QuestionOut(
@@ -96,7 +151,6 @@ def _to_version_summary_out(version: QuestionnaireVersion) -> QuestionnaireVersi
         version_number=version.version_number,
         status=version.status,
         instructions_markdown=version.instructions_markdown,
-        created_by_id=version.created_by_id,
         published_at=version.published_at,
         created_at=version.created_at,
         updated_at=version.updated_at,
@@ -119,7 +173,8 @@ def _to_questionnaire_summary_out(questionnaire: Questionnaire) -> Questionnaire
     )
     return QuestionnaireSummaryOut(
         id=questionnaire.id,
-        owner_admin_id=questionnaire.owner_admin_id,
+        owner_admin_username=questionnaire.owner_admin.username,
+        slug=questionnaire.slug,
         title=questionnaire.title,
         description=questionnaire.description,
         is_archived=questionnaire.is_archived,
@@ -420,8 +475,12 @@ def create_questionnaire(
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ) -> QuestionnaireSummaryOut:
+    candidate_source = payload.slug if payload.slug else payload.title
+    unique_slug = _build_unique_slug(db, requested_slug=candidate_source)
+
     questionnaire = Questionnaire(
         owner_admin_id=current_user.id,
+        slug=unique_slug,
         title=payload.title.strip(),
         description=payload.description,
     )
@@ -461,7 +520,8 @@ def get_questionnaire(
     )
     return QuestionnaireDetailOut(
         id=questionnaire.id,
-        owner_admin_id=questionnaire.owner_admin_id,
+        owner_admin_username=questionnaire.owner_admin.username,
+        slug=questionnaire.slug,
         title=questionnaire.title,
         description=questionnaire.description,
         is_archived=questionnaire.is_archived,
@@ -477,7 +537,7 @@ def list_questionnaire_responses(
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
     version_id: str | None = Query(default=None),
-    user_id: str | None = Query(default=None),
+    username: str | None = Query(default=None),
 ) -> list[AdminResponseSummaryOut]:
     questionnaire = _get_accessible_questionnaire(
         db, questionnaire_id=questionnaire_id, user=current_user
@@ -492,8 +552,8 @@ def list_questionnaire_responses(
     )
     if version_id:
         stmt = stmt.where(Response.questionnaire_version_id == version_id)
-    if user_id:
-        stmt = stmt.where(Response.user_id == user_id)
+    if username:
+        stmt = stmt.where(User.username == normalize_username(username))
 
     rows = db.execute(stmt).all()
     if not rows:
@@ -516,7 +576,6 @@ def list_questionnaire_responses(
             questionnaire_id=questionnaire.id,
             questionnaire_version_id=version.id,
             questionnaire_version_number=version.version_number,
-            user_id=user.id,
             username=user.username,
             user_role=user.role,
             submitted_at=response.submitted_at,
@@ -524,6 +583,114 @@ def list_questionnaire_responses(
         )
         for response, user, version in rows
     ]
+
+
+@router.get("/{questionnaire_id}/responses/export.csv")
+def export_questionnaire_responses_csv(
+    questionnaire_id: str,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    version_id: str | None = Query(default=None),
+) -> FastAPIResponse:
+    questionnaire = _get_accessible_questionnaire(
+        db, questionnaire_id=questionnaire_id, user=current_user
+    )
+
+    if version_id:
+        version_exists = db.scalar(
+            select(QuestionnaireVersion.id)
+            .where(QuestionnaireVersion.id == version_id)
+            .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+        )
+        if not version_exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Questionnaire version not found",
+            )
+
+    response_stmt = (
+        select(Response, User, QuestionnaireVersion)
+        .join(User, User.id == Response.user_id)
+        .join(QuestionnaireVersion, QuestionnaireVersion.id == Response.questionnaire_version_id)
+        .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+        .order_by(desc(Response.submitted_at))
+    )
+    if version_id:
+        response_stmt = response_stmt.where(Response.questionnaire_version_id == version_id)
+    response_rows = db.execute(response_stmt).all()
+
+    question_stmt = (
+        select(Question, QuestionnaireVersion.version_number)
+        .join(QuestionnaireVersion, QuestionnaireVersion.id == Question.questionnaire_version_id)
+        .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+        .order_by(QuestionnaireVersion.version_number, Question.position)
+    )
+    if version_id:
+        question_stmt = question_stmt.where(Question.questionnaire_version_id == version_id)
+    question_rows = db.execute(question_stmt).all()
+
+    question_columns: list[tuple[str, str]] = []
+    for question, version_number in question_rows:
+        question_columns.append((question.id, f"v{version_number}_q{question.position}"))
+
+    response_ids = [response.id for response, _, _ in response_rows]
+    answer_map: dict[tuple[str, str], str] = {}
+    answer_count_by_response_id: dict[str, int] = {}
+    if response_ids:
+        item_rows = db.execute(
+            select(ResponseItem)
+            .where(ResponseItem.response_id.in_(response_ids))
+        ).scalars().all()
+        for item in item_rows:
+            parsed_value = _parse_json_any(item.answer_json)
+            answer_map[(item.response_id, item.question_id)] = _stringify_answer_value(parsed_value)
+            answer_count_by_response_id[item.response_id] = (
+                answer_count_by_response_id.get(item.response_id, 0) + 1
+            )
+
+    fieldnames = [
+        "response_id",
+        "questionnaire_id",
+        "questionnaire_title",
+        "questionnaire_version_id",
+        "questionnaire_version_number",
+        "username",
+        "user_role",
+        "submitted_at",
+        "answer_count",
+        *[column_name for _, column_name in question_columns],
+    ]
+
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    for response, user, version in response_rows:
+        row: dict[str, Any] = {
+            "response_id": response.id,
+            "questionnaire_id": questionnaire.id,
+            "questionnaire_title": questionnaire.title,
+            "questionnaire_version_id": version.id,
+            "questionnaire_version_number": version.version_number,
+            "username": user.username,
+            "user_role": user.role.value,
+            "submitted_at": response.submitted_at.isoformat(),
+            "answer_count": answer_count_by_response_id.get(response.id, 0),
+        }
+        for question_id, column_name in question_columns:
+            row[column_name] = answer_map.get((response.id, question_id), "")
+        writer.writerow(row)
+
+    filename = f"questionnaire-{questionnaire.id}-responses.csv"
+    if version_id:
+        version = db.get(QuestionnaireVersion, version_id)
+        if version:
+            filename = f"questionnaire-{questionnaire.id}-v{version.version_number}-responses.csv"
+
+    return FastAPIResponse(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get(
@@ -572,7 +739,6 @@ def get_questionnaire_response_detail(
         questionnaire_id=questionnaire.id,
         questionnaire_version_id=version.id,
         questionnaire_version_number=version.version_number,
-        user_id=user.id,
         username=user.username,
         user_role=user.role,
         submitted_at=response.submitted_at,
@@ -592,6 +758,12 @@ def update_questionnaire(
     )
     questionnaire.title = payload.title.strip()
     questionnaire.description = payload.description
+    if payload.slug is not None:
+        questionnaire.slug = _build_unique_slug(
+            db,
+            requested_slug=payload.slug,
+            exclude_questionnaire_id=questionnaire.id,
+        )
     questionnaire.updated_at = utcnow()
     db.commit()
     db.refresh(questionnaire)

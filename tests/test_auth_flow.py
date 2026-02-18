@@ -68,6 +68,14 @@ def test_open_signup_and_login_flow() -> None:
         assert login_complete.status_code == 200
 
 
+def test_username_is_unique_case_insensitive() -> None:
+    with TestClient(app) as client:
+        _signup(client, "alice")
+
+        duplicate = client.post("/api/auth/signup/begin", json={"username": "ALICE"})
+        assert duplicate.status_code == 409
+
+
 def test_invite_only_mode_blocks_public_signup_without_token_and_user_invite_requires_scope(
     test_session_factory,
 ) -> None:
@@ -196,8 +204,7 @@ def test_superadmin_user_management_endpoints(test_session_factory) -> None:
         db.commit()
 
     with TestClient(app) as super_client:
-        root = _signup(super_client, "root", token=bootstrap_token)
-        root_id = root["user"]["id"]
+        _signup(super_client, "root", token=bootstrap_token)
 
         admin_token = super_client.post(
             "/api/admin/signup-tokens",
@@ -206,27 +213,26 @@ def test_superadmin_user_management_endpoints(test_session_factory) -> None:
         assert admin_token.status_code == 200
 
         with TestClient(app) as admin_client:
-            admin = _signup(admin_client, "designer", token=admin_token.json()["token"])
-            admin_id = admin["user"]["id"]
+            _signup(admin_client, "designer", token=admin_token.json()["token"])
 
             forbidden_list = admin_client.get("/api/admin/users")
             assert forbidden_list.status_code == 403
 
         users = super_client.get("/api/admin/users")
         assert users.status_code == 200
-        ids = {item["id"] for item in users.json()}
-        assert root_id in ids
-        assert admin_id in ids
+        usernames = {item["username"] for item in users.json()}
+        assert "root" in usernames
+        assert "designer" in usernames
 
         updated_admin = super_client.patch(
-            f"/api/admin/users/{admin_id}",
+            "/api/admin/users/designer",
             json={"role": "user", "is_active": True},
         )
         assert updated_admin.status_code == 200
         assert updated_admin.json()["role"] == "user"
 
         forbid_self_deactivate = super_client.patch(
-            f"/api/admin/users/{root_id}",
+            "/api/admin/users/root",
             json={"is_active": False},
         )
         assert forbid_self_deactivate.status_code == 400

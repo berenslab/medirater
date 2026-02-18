@@ -123,7 +123,6 @@
         <thead>
           <tr>
             <th>Username</th>
-            <th>ID</th>
             <th>Role</th>
             <th>Active</th>
             <th>Created</th>
@@ -164,45 +163,44 @@
 
       if (!state.users.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="6" class="muted">No users found.</td>';
+        tr.innerHTML = '<td colspan="5" class="muted">No users found.</td>';
         tbody.appendChild(tr);
         return;
       }
 
       for (const user of state.users) {
-        const isSelf = state.me && state.me.id === user.id;
+        const isSelf = state.me && state.me.username === user.username;
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${user.username}${isSelf ? " (you)" : ""}</td>
-          <td>${user.id}</td>
           <td>
-            <select data-role-for="${user.id}" ${isSelf ? "disabled" : ""}>
+            <select data-role-for="${user.username}" ${isSelf ? "disabled" : ""}>
               <option value="user" ${user.role === "user" ? "selected" : ""}>user</option>
               <option value="admin" ${user.role === "admin" ? "selected" : ""}>admin</option>
               <option value="superadmin" ${user.role === "superadmin" ? "selected" : ""}>superadmin</option>
             </select>
           </td>
           <td>
-            <select data-active-for="${user.id}" ${isSelf ? "disabled" : ""}>
+            <select data-active-for="${user.username}" ${isSelf ? "disabled" : ""}>
               <option value="true" ${user.is_active ? "selected" : ""}>true</option>
               <option value="false" ${!user.is_active ? "selected" : ""}>false</option>
             </select>
           </td>
           <td>${user.created_at}</td>
-          <td><button type="button" data-save-for="${user.id}" ${isSelf ? "disabled" : ""}>Save</button></td>
+          <td><button type="button" data-save-for="${user.username}" ${isSelf ? "disabled" : ""}>Save</button></td>
         `;
         tbody.appendChild(tr);
       }
 
       for (const btn of document.querySelectorAll("[data-save-for]")) {
         btn.addEventListener("click", async (event) => {
-          const userId = event.currentTarget.getAttribute("data-save-for");
-          const role = document.querySelector(`[data-role-for='${userId}']`)?.value;
-          const isActiveValue = document.querySelector(`[data-active-for='${userId}']`)?.value;
+          const username = event.currentTarget.getAttribute("data-save-for");
+          const role = document.querySelector(`[data-role-for='${username}']`)?.value;
+          const isActiveValue = document.querySelector(`[data-active-for='${username}']`)?.value;
           if (!role || !isActiveValue) return;
 
           try {
-            await requestJson(`/api/admin/users/${userId}`, {
+            await requestJson(`/api/admin/users/${encodeURIComponent(username)}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({

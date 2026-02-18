@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.db import Base, SessionLocal, engine
 from app.routers import admin, assets, auth, passkeys, questionnaires, user_questionnaires
+from app.services.schema_service import ensure_runtime_schema
 from app.services.settings_service import ensure_default_settings
 
 settings = get_settings()
@@ -23,6 +24,7 @@ def _parse_allowed_origins() -> list[str]:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema(engine)
     db = SessionLocal()
     try:
         ensure_default_settings(db)

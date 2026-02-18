@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, func, select
+from sqlalchemy import asc, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -27,6 +27,7 @@ from app.schemas import (
     SignupTokenSummary,
     UpdateSignupModeRequest,
 )
+from app.security import normalize_username
 from app.services.settings_service import get_public_signup_mode, set_public_signup_mode
 from app.services.token_service import (
     deserialize_visibility_scope,
@@ -47,17 +48,17 @@ def _to_assignment_out(
     user: User,
     version: QuestionnaireVersion,
     questionnaire: Questionnaire,
+    granted_by_username: str | None,
 ) -> AssignmentOut:
     return AssignmentOut(
         id=assignment.id,
-        user_id=user.id,
         username=user.username,
         user_role=user.role,
         questionnaire_id=questionnaire.id,
         questionnaire_version_id=version.id,
         questionnaire_title=questionnaire.title,
         questionnaire_version_number=version.version_number,
-        granted_by_id=assignment.granted_by_id,
+        granted_by_username=granted_by_username,
         is_active=assignment.is_active,
         created_at=assignment.created_at,
     )
@@ -202,9 +203,22 @@ def list_users_for_superadmin(
     return [_to_admin_managed_user_out(user) for user in users]
 
 
-@router.patch("/users/{user_id}", response_model=AdminManagedUserOut)
+@router.get("/assignment-target-users", response_model=list[AdminManagedUserOut])
+def list_users_for_assignment_targets(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[AdminManagedUserOut]:
+    users = (
+        db.execute(select(User).where(User.is_active.is_(True)).order_by(asc(User.username)).limit(1000))
+        .scalars()
+        .all()
+    )
+    return [_to_admin_managed_user_out(user) for user in users]
+
+
+@router.patch("/users/{username}", response_model=AdminManagedUserOut)
 def update_user_for_superadmin(
-    user_id: str,
+    username: str,
     payload: AdminUpdateUserRequest,
     current_user: User = Depends(get_superadmin_user),
     db: Session = Depends(get_db),
@@ -215,7 +229,8 @@ def update_user_for_superadmin(
             detail="At least one field (role or is_active) must be provided",
         )
 
-    user = db.get(User, user_id)
+    normalized_username = normalize_username(username)
+    user = db.scalar(select(User).where(User.username == normalized_username))
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
@@ -259,8 +274,9 @@ def update_user_for_superadmin(
 def list_assignments(
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
-    target_user_id: str | None = Query(default=None),
+    target_username: str | None = Query(default=None),
     questionnaire_version_id: str | None = Query(default=None),
+    questionnaire_id: str | None = Query(default=None),
 ) -> list[AssignmentOut]:
     stmt = (
         select(UserAssignment, User, QuestionnaireVersion, Questionnaire)
@@ -270,16 +286,32 @@ def list_assignments(
         .order_by(desc(UserAssignment.created_at))
         .limit(1000)
     )
-    if target_user_id:
-        stmt = stmt.where(UserAssignment.user_id == target_user_id)
+    if target_username:
+        stmt = stmt.where(User.username == normalize_username(target_username))
     if questionnaire_version_id:
         stmt = stmt.where(UserAssignment.questionnaire_version_id == questionnaire_version_id)
+    if questionnaire_id:
+        stmt = stmt.where(Questionnaire.id == questionnaire_id)
     if current_user.role == Role.ADMIN:
         stmt = stmt.where(Questionnaire.owner_admin_id == current_user.id)
 
     rows = db.execute(stmt).all()
+    granted_by_ids = {assignment.granted_by_id for assignment, _, _, _ in rows if assignment.granted_by_id}
+    granted_by_username_by_id: dict[str, str] = {}
+    if granted_by_ids:
+        granted_by_rows = db.execute(
+            select(User.id, User.username).where(User.id.in_(granted_by_ids))
+        ).all()
+        granted_by_username_by_id = {user_id: username for user_id, username in granted_by_rows}
+
     return [
-        _to_assignment_out(assignment, user=user, version=version, questionnaire=questionnaire)
+        _to_assignment_out(
+            assignment,
+            user=user,
+            version=version,
+            questionnaire=questionnaire,
+            granted_by_username=granted_by_username_by_id.get(assignment.granted_by_id or ""),
+        )
         for assignment, user, version, questionnaire in rows
     ]
 
@@ -290,7 +322,9 @@ def create_or_update_assignment(
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ) -> AssignmentOut:
-    target_user = db.get(User, payload.target_user_id)
+    target_user = db.scalar(
+        select(User).where(User.username == normalize_username(payload.target_username))
+    )
     if not target_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target user not found")
 
@@ -334,7 +368,13 @@ def create_or_update_assignment(
 
     db.commit()
     db.refresh(assignment)
-    return _to_assignment_out(assignment, user=target_user, version=version, questionnaire=questionnaire)
+    return _to_assignment_out(
+        assignment,
+        user=target_user,
+        version=version,
+        questionnaire=questionnaire,
+        granted_by_username=current_user.username,
+    )
 
 
 @router.patch("/assignments/{assignment_id}", response_model=AssignmentOut)
@@ -365,4 +405,10 @@ def update_assignment(
     assignment.granted_by_id = current_user.id
     db.commit()
     db.refresh(assignment)
-    return _to_assignment_out(assignment, user=target_user, version=version, questionnaire=questionnaire)
+    return _to_assignment_out(
+        assignment,
+        user=target_user,
+        version=version,
+        questionnaire=questionnaire,
+        granted_by_username=current_user.username,
+    )

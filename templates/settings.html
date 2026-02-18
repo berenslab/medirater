@@ -208,48 +208,6 @@
         </table>
       </article>
 
-      <article class="card" id="assignment-card" style="display:none;">
-        <h2>Direct assignments</h2>
-        <p>Assign published questionnaire versions to any existing user (including admins).</p>
-
-        <div class="row">
-          <div style="flex:1;min-width:240px;">
-            <label for="assign-user-id">Target user ID</label>
-            <input id="assign-user-id" placeholder="user UUID" />
-          </div>
-          <div style="flex:1;min-width:240px;">
-            <label for="assign-version-id">Questionnaire version ID</label>
-            <input id="assign-version-id" placeholder="published version UUID" />
-          </div>
-          <div style="min-width:130px;">
-            <label for="assign-active">Active</label>
-            <select id="assign-active">
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="row">
-          <button id="save-assignment-btn">Create or update assignment</button>
-          <button id="refresh-assignments-btn" class="secondary">Refresh assignments</button>
-        </div>
-        <div id="assignment-status" class="status"></div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Role</th>
-              <th>Questionnaire</th>
-              <th>Version</th>
-              <th>Active</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="assignments-tbody"></tbody>
-        </table>
-      </article>
     </section>
   </main>
 
@@ -430,57 +388,6 @@
       }
     }
 
-    function renderAssignmentRows(items) {
-      const tbody = document.getElementById("assignments-tbody");
-      tbody.innerHTML = "";
-      if (!items.length) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="6" class="muted">No assignments found.</td>';
-        tbody.appendChild(tr);
-        return;
-      }
-
-      for (const item of items) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${item.username}<br><span class="muted">${item.user_id}</span></td>
-          <td>${item.user_role}</td>
-          <td>${item.questionnaire_title}</td>
-          <td>v${item.questionnaire_version_number}<br><span class="muted">${item.questionnaire_version_id}</span></td>
-          <td>${item.is_active}</td>
-          <td><button type="button" data-toggle-assignment-id="${item.id}" data-next-active="${item.is_active ? "false" : "true"}">${item.is_active ? "Deactivate" : "Activate"}</button></td>
-        `;
-        tbody.appendChild(tr);
-      }
-
-      for (const btn of document.querySelectorAll("[data-toggle-assignment-id]")) {
-        btn.addEventListener("click", async (event) => {
-          const assignmentId = event.currentTarget.getAttribute("data-toggle-assignment-id");
-          const nextActive = event.currentTarget.getAttribute("data-next-active") === "true";
-          try {
-            await requestJson(`/api/admin/assignments/${assignmentId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ is_active: nextActive }),
-            });
-            setStatus("assignment-status", "Assignment updated.", true);
-            await loadAssignments();
-          } catch (error) {
-            setStatus("assignment-status", error.message || String(error), false);
-          }
-        });
-      }
-    }
-
-    async function loadAssignments() {
-      try {
-        const items = await requestJson("/api/admin/assignments");
-        renderAssignmentRows(items || []);
-      } catch (error) {
-        setStatus("assignment-status", error.message || String(error), false);
-      }
-    }
-
     async function init() {
       try {
         state.me = await requestJson("/api/auth/me");
@@ -489,10 +396,8 @@
         if (state.me.role === "superadmin") {
           document.getElementById("signup-mode-card").style.display = "block";
           document.getElementById("invite-card").style.display = "block";
-          document.getElementById("assignment-card").style.display = "block";
         } else if (state.me.role === "admin") {
           document.getElementById("invite-card").style.display = "block";
-          document.getElementById("assignment-card").style.display = "block";
           const roleSelect = document.getElementById("token-role");
           for (const opt of roleSelect.options) {
             if (opt.value !== "user") opt.disabled = true;
@@ -510,7 +415,6 @@
       if (state.me?.role === "admin" || state.me?.role === "superadmin") {
         syncTokenRole();
         await loadTokens();
-        await loadAssignments();
       }
     }
 
@@ -618,37 +522,6 @@
     });
 
     document.getElementById("refresh-tokens-btn").addEventListener("click", loadTokens);
-
-    document.getElementById("save-assignment-btn").addEventListener("click", async () => {
-      try {
-        const targetUserId = document.getElementById("assign-user-id").value.trim();
-        const questionnaireVersionId = document.getElementById("assign-version-id").value.trim();
-        const isActive = document.getElementById("assign-active").value === "true";
-
-        if (!targetUserId) {
-          throw new Error("Target user ID is required.");
-        }
-        if (!questionnaireVersionId) {
-          throw new Error("Questionnaire version ID is required.");
-        }
-
-        await requestJson("/api/admin/assignments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            target_user_id: targetUserId,
-            questionnaire_version_id: questionnaireVersionId,
-            is_active: isActive,
-          }),
-        });
-        setStatus("assignment-status", "Assignment saved.", true);
-        await loadAssignments();
-      } catch (error) {
-        setStatus("assignment-status", error.message || String(error), false);
-      }
-    });
-
-    document.getElementById("refresh-assignments-btn").addEventListener("click", loadAssignments);
 
     init();
   </script>

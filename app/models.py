@@ -64,6 +64,9 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    owned_questionnaires: Mapped[list["Questionnaire"]] = relationship(
+        back_populates="owner_admin",
+    )
     responses: Mapped[list["Response"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
@@ -177,12 +180,14 @@ class Questionnaire(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     owner_admin_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    slug: Mapped[str] = mapped_column(String(220), unique=True, index=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
+    owner_admin: Mapped[User] = relationship(back_populates="owned_questionnaires")
     versions: Mapped[list["QuestionnaireVersion"]] = relationship(
         back_populates="questionnaire",
         cascade="all, delete-orphan",

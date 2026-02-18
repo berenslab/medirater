@@ -148,6 +148,9 @@
         <label for="title">Title</label>
         <input id="title" placeholder="e.g. OCT baseline" />
 
+        <label for="slug">Slug (optional)</label>
+        <input id="slug" placeholder="e.g. oct-baseline" />
+
         <label for="description">Description</label>
         <textarea id="description"></textarea>
 
@@ -214,6 +217,7 @@
         const latest = item.latest_version_number
           ? `v${item.latest_version_number} (${item.latest_version_status})`
           : "-";
+        const assignmentsLink = ` | <a href="/questionnaires/${item.id}/assignments">Assignments</a>`;
         const responsesLink = ` | <a href="/questionnaires/${item.id}/responses">Responses</a>`;
         const answerLink = item.latest_version_status === "published" && item.latest_version_id
           ? ` | <a href="/answer/${item.latest_version_id}/consent">Answer</a>`
@@ -221,9 +225,9 @@
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${item.title}</td>
-          <td>${item.owner_admin_id}</td>
+          <td>${item.owner_admin_username}</td>
           <td>${latest}</td>
-          <td><a href="/questionnaires/${item.id}/design">Design</a>${responsesLink}${answerLink}</td>
+          <td><a href="/questionnaires/${item.id}/design">Design</a>${assignmentsLink}${responsesLink}${answerLink}</td>
         `;
         tbody.appendChild(tr);
       }
@@ -258,6 +262,7 @@
         if (!title) {
           throw new Error("Title is required.");
         }
+        const slugRaw = document.getElementById("slug").value.trim();
         const descriptionRaw = document.getElementById("description").value.trim();
         const instructions = document.getElementById("instructions").value;
 
@@ -266,6 +271,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title,
+            slug: slugRaw || null,
             description: descriptionRaw || null,
             instructions_markdown: instructions,
           }),
@@ -273,6 +279,7 @@
 
         setStatus("create-status", "Questionnaire created.", true);
         document.getElementById("title").value = "";
+        document.getElementById("slug").value = "";
         document.getElementById("description").value = "";
         document.getElementById("instructions").value = "";
         await loadQuestionnaires();

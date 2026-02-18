@@ -154,6 +154,7 @@
           <label for="version-filter">Version</label>
           <select id="version-filter"></select>
           <button id="refresh-btn" class="secondary">Refresh</button>
+          <button id="export-btn">Export CSV</button>
         </div>
         <div id="list-status" class="status"></div>
 
@@ -262,7 +263,7 @@
       for (const item of state.responses) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${item.username}<div class="mono">${item.user_id}</div></td>
+          <td>${item.username}</td>
           <td>${item.user_role}</td>
           <td>v${item.questionnaire_version_number}</td>
           <td>${item.submitted_at}</td>
@@ -336,6 +337,20 @@
       }
     }
 
+    function exportCsv() {
+      try {
+        const versionId = document.getElementById("version-filter").value;
+        const query = new URLSearchParams();
+        if (versionId) query.set("version_id", versionId);
+        const url = query.toString()
+          ? `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/responses/export.csv?${query.toString()}`
+          : `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/responses/export.csv`;
+        window.location.assign(url);
+      } catch (error) {
+        setStatus("list-status", error.message || String(error), false);
+      }
+    }
+
     async function loadResponseDetail(responseId) {
       try {
         const detail = await requestJson(
@@ -362,6 +377,7 @@
     }
 
     document.getElementById("refresh-btn").addEventListener("click", loadResponses);
+    document.getElementById("export-btn").addEventListener("click", exportCsv);
     document.getElementById("version-filter").addEventListener("change", loadResponses);
 
     init().catch((error) => {

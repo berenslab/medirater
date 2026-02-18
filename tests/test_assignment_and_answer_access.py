@@ -57,7 +57,7 @@ def _bootstrap_superadmin_token(test_session_factory) -> str:
         return token
 
 
-def _create_published_version(client: TestClient, title: str, owner_hint: str) -> str:
+def _create_published_version(client: TestClient, title: str, owner_hint: str) -> tuple[str, str]:
     created = client.post(
         "/api/admin/questionnaires",
         json={"title": title, "description": None, "instructions_markdown": "instructions"},
@@ -84,7 +84,7 @@ def _create_published_version(client: TestClient, title: str, owner_hint: str) -
         f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
     )
     assert published.status_code == 200
-    return version_id
+    return questionnaire_id, version_id
 
 
 def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
@@ -118,18 +118,19 @@ def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
         # Create open user and later assign directly.
 
     with TestClient(app) as admin_a_client:
-        admin_a = _signup(admin_a_client, "admin_a", token=admin_a_token.json()["token"])
-        admin_a_id = admin_a["user"]["id"]
-        version_a = _create_published_version(admin_a_client, "A Questionnaire", "admin_a")
+        _signup(admin_a_client, "admin_a", token=admin_a_token.json()["token"])
+        _questionnaire_a_id, version_a = _create_published_version(
+            admin_a_client, "A Questionnaire", "admin_a"
+        )
 
     with TestClient(app) as admin_b_client:
-        admin_b = _signup(admin_b_client, "admin_b", token=admin_b_token.json()["token"])
-        admin_b_id = admin_b["user"]["id"]
-        version_b = _create_published_version(admin_b_client, "B Questionnaire", "admin_b")
+        _signup(admin_b_client, "admin_b", token=admin_b_token.json()["token"])
+        questionnaire_b_id, version_b = _create_published_version(
+            admin_b_client, "B Questionnaire", "admin_b"
+        )
 
     with TestClient(app) as user_client:
-        user = _signup(user_client, "alice")
-        user_id = user["user"]["id"]
+        _signup(user_client, "alice")
 
     with TestClient(app) as admin_a_client:
         _login(admin_a_client, "admin_a")
@@ -137,7 +138,7 @@ def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
         assign_admin_b_to_a = admin_a_client.post(
             "/api/admin/assignments",
             json={
-                "target_user_id": admin_b_id,
+                "target_username": "admin_b",
                 "questionnaire_version_id": version_a,
                 "is_active": True,
             },
@@ -147,7 +148,7 @@ def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
         forbidden_assign_foreign = admin_a_client.post(
             "/api/admin/assignments",
             json={
-                "target_user_id": user_id,
+                "target_username": "alice",
                 "questionnaire_version_id": version_b,
                 "is_active": True,
             },
@@ -160,7 +161,7 @@ def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
         assign_admin_a_to_b = super_client.post(
             "/api/admin/assignments",
             json={
-                "target_user_id": admin_a_id,
+                "target_username": "admin_a",
                 "questionnaire_version_id": version_b,
                 "is_active": True,
             },
@@ -170,7 +171,7 @@ def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
         assign_user_to_b = super_client.post(
             "/api/admin/assignments",
             json={
-                "target_user_id": user_id,
+                "target_username": "alice",
                 "questionnaire_version_id": version_b,
                 "is_active": True,
             },
@@ -181,8 +182,22 @@ def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
         assert assignments.status_code == 200
         assert len(assignments.json()) >= 3
 
+        filtered_assignments = super_client.get(
+            f"/api/admin/assignments?questionnaire_id={questionnaire_b_id}"
+        )
+        assert filtered_assignments.status_code == 200
+        assert all(
+            item["questionnaire_id"] == questionnaire_b_id for item in filtered_assignments.json()
+        )
+
     with TestClient(app) as admin_a_client:
         _login(admin_a_client, "admin_a")
+
+        assignment_targets = admin_a_client.get("/api/admin/assignment-target-users")
+        assert assignment_targets.status_code == 200
+        usernames = {item["username"] for item in assignment_targets.json()}
+        assert "alice" in usernames
+        assert "admin_b" in usernames
 
         own_access = admin_a_client.get(f"/api/user/questionnaires/{version_a}")
         assert own_access.status_code == 200

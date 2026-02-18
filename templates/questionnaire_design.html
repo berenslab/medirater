@@ -198,10 +198,17 @@
           <label for="q-title">Title</label>
           <input id="q-title" />
 
+          <label for="q-slug">Slug</label>
+          <input id="q-slug" />
+
           <label for="q-description">Description</label>
           <textarea id="q-description"></textarea>
 
           <button id="save-q-btn">Save questionnaire</button>
+          <div class="row">
+            <button id="open-assignments-btn" class="secondary">Manage assignments</button>
+            <button id="open-responses-btn" class="secondary">View responses</button>
+          </div>
 
           <label for="version-select">Working version</label>
           <select id="version-select"></select>
@@ -614,6 +621,7 @@ c|c</textarea>
       state.questionnaire = detail;
       document.getElementById("headline").textContent = `${detail.title} (${detail.id})`;
       document.getElementById("q-title").value = detail.title || "";
+      document.getElementById("q-slug").value = detail.slug || "";
       document.getElementById("q-description").value = detail.description || "";
       renderVersionSelect();
       syncDraftControls();
@@ -793,12 +801,13 @@ c|c</textarea>
       try {
         const title = document.getElementById("q-title").value.trim();
         if (!title) throw new Error("Title is required.");
+        const slug = document.getElementById("q-slug").value.trim();
         const descriptionRaw = document.getElementById("q-description").value.trim();
 
         await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, description: descriptionRaw || null }),
+          body: JSON.stringify({ title, slug: slug || null, description: descriptionRaw || null }),
         });
 
         setStatus("version-status", "Questionnaire saved.", "ok");
@@ -855,6 +864,14 @@ c|c</textarea>
       } catch (error) {
         setStatus("version-status", error.message || String(error), "err");
       }
+    });
+
+    document.getElementById("open-assignments-btn").addEventListener("click", () => {
+      window.location.assign(`/questionnaires/${QUESTIONNAIRE_ID}/assignments`);
+    });
+
+    document.getElementById("open-responses-btn").addEventListener("click", () => {
+      window.location.assign(`/questionnaires/${QUESTIONNAIRE_ID}/responses`);
     });
 
     document.getElementById("clear-staged-btn").addEventListener("click", () => {

@@ -56,8 +56,7 @@ def test_admin_questionnaire_lifecycle_and_draft_clone(test_session_factory) -> 
         admin_token = admin_token_resp.json()["token"]
 
     with TestClient(app) as admin_client:
-        admin_signup = _signup(admin_client, "designer", token=admin_token)
-        admin_user_id = admin_signup["user"]["id"]
+        _signup(admin_client, "designer", token=admin_token)
 
         created = admin_client.post(
             "/api/admin/questionnaires",
@@ -71,8 +70,44 @@ def test_admin_questionnaire_lifecycle_and_draft_clone(test_session_factory) -> 
         questionnaire = created.json()
         questionnaire_id = questionnaire["id"]
         draft_version_id = questionnaire["latest_version_id"]
-        assert questionnaire["owner_admin_id"] == admin_user_id
+        assert questionnaire["owner_admin_username"] == "designer"
+        assert questionnaire["slug"] == "retina-screening-v1"
         assert draft_version_id
+
+        created_duplicate_title = admin_client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Retina Screening V1",
+                "description": "Second",
+                "instructions_markdown": "",
+            },
+        )
+        assert created_duplicate_title.status_code == 200
+        assert created_duplicate_title.json()["slug"] == "retina-screening-v1-2"
+
+        custom_slug_questionnaire = admin_client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Custom Slug Questionnaire",
+                "slug": "custom-slug",
+                "description": None,
+                "instructions_markdown": "",
+            },
+        )
+        assert custom_slug_questionnaire.status_code == 200
+        custom_id = custom_slug_questionnaire.json()["id"]
+        assert custom_slug_questionnaire.json()["slug"] == "custom-slug"
+
+        updated_custom_slug = admin_client.patch(
+            f"/api/admin/questionnaires/{custom_id}",
+            json={
+                "title": "Custom Slug Questionnaire",
+                "slug": "retina-screening-v1",
+                "description": None,
+            },
+        )
+        assert updated_custom_slug.status_code == 200
+        assert updated_custom_slug.json()["slug"].startswith("retina-screening-v1")
 
         created_question = admin_client.post(
             f"/api/admin/questionnaires/{questionnaire_id}/versions/{draft_version_id}/questions",

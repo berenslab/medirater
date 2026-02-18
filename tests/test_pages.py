@@ -88,6 +88,10 @@ def test_public_pages_and_route_guards() -> None:
         assert responses.status_code == 303
         assert responses.headers["location"] == "/login"
 
+        assignments = client.get("/questionnaires/fake-questionnaire/assignments", follow_redirects=False)
+        assert assignments.status_code == 303
+        assert assignments.headers["location"] == "/login"
+
         admin = client.get("/admin", follow_redirects=False)
         assert admin.status_code == 303
         assert admin.headers["location"] == "/questionnaires"
@@ -150,6 +154,10 @@ def test_logged_in_regular_user_lands_on_assigned() -> None:
         assert responses.status_code == 303
         assert responses.headers["location"] == "/assigned"
 
+        assignments = client.get("/questionnaires/fake-questionnaire/assignments", follow_redirects=False)
+        assert assignments.status_code == 303
+        assert assignments.headers["location"] == "/assigned"
+
 
 def test_superadmin_lands_on_questionnaires_with_expected_nav(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
@@ -168,6 +176,7 @@ def test_superadmin_lands_on_questionnaires_with_expected_nav(test_session_facto
         assert "href=\"/settings\"" in questionnaires.text
         assert "href=\"/assigned\"" not in questionnaires.text
         assert "/responses" in questionnaires.text
+        assert "/assignments" in questionnaires.text
 
         users = client.get("/users")
         assert users.status_code == 200

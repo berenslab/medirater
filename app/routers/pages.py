@@ -255,6 +255,37 @@ def questionnaire_responses_page(
     )
 
 
+@router.get("/questionnaires/{questionnaire_id}/assignments")
+def questionnaire_assignments_page(
+    questionnaire_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    user = _current_user_from_session(request, db, settings)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
+        return RedirectResponse(url=_landing_url_for(user), status_code=303)
+
+    questionnaire = db.get(Questionnaire, questionnaire_id)
+    if not questionnaire:
+        return RedirectResponse(url="/questionnaires", status_code=303)
+
+    if user.role != Role.SUPERADMIN and questionnaire.owner_admin_id != user.id:
+        return RedirectResponse(url="/questionnaires", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="questionnaire_assignments.html",
+        context={
+            **_nav_context(user),
+            "questionnaire_id": questionnaire_id,
+        },
+    )
+
+
 @router.get("/assigned")
 def assigned_page(
     request: Request,

@@ -67,11 +67,13 @@ uv run uvicorn app.main:app --reload
 3. Create an `admin` account using `/admin_signup`.
 4. As admin or superadmin, go to `/questionnaires`:
 - create/select questionnaire
+- set questionnaire `slug` (must be unique)
 - open dedicated questionnaire design page
 - use bulk upload/import as the default question creation flow
 - manually edit/delete existing generated questions when needed
 - publish draft version
- - open `/questionnaires/{questionnaire_id}/responses` to review submitted answers
+- open `/questionnaires/{questionnaire_id}/assignments` to assign users per questionnaire/version
+- open `/questionnaires/{questionnaire_id}/responses` to review submitted answers and export all responses to CSV
 5. Go to `/settings` for:
 - passkey management
 - signup mode control (superadmin only)

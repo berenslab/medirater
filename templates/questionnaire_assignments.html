@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="google" content="notranslate" />
+  <meta http-equiv="Content-Language" content="en" />
+  <title>Questionnaire Assignments</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --panel: #ffffff;
+      --text: #1a2330;
+      --muted: #56657a;
+      --accent: #0a6c7e;
+      --border: #d7e1ea;
+      --ok: #1f7a45;
+      --err: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20px;
+    }
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.2rem; }
+    .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
+    nav { display: flex; gap: 10px; }
+    nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+    .content {
+      display: grid;
+      gap: 14px;
+      padding: 14px;
+      grid-template-columns: 340px 1fr;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fcfdff;
+      padding: 12px;
+    }
+    h2 { margin: 0 0 10px; font-size: 1rem; }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    label {
+      display: block;
+      margin: 8px 0 4px;
+      font-size: 0.88rem;
+      color: #334357;
+    }
+    select, button {
+      font: inherit;
+    }
+    select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button.secondary { background: #4d5f70; }
+    .status { margin-top: 8px; min-height: 18px; font-size: 0.9rem; }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    .muted { color: var(--muted); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 0.88rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      padding: 7px 6px;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    .mono {
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 0.8rem;
+      color: #3c4c60;
+    }
+    @media (max-width: 980px) {
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="header">
+      <div>
+        <h1>Questionnaire Assignments</h1>
+        <div id="whoami" class="meta">Loading user...</div>
+        <div id="headline" class="meta">Loading questionnaire...</div>
+      </div>
+      <nav>
+        {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
+        {% if show_users_link %}<a href="/users">Users</a>{% endif %}
+        {% if show_assigned_link %}<a href="/assigned">Assigned</a>{% endif %}
+        {% if show_settings_link %}<a href="/settings">Settings</a>{% endif %}
+      </nav>
+    </section>
+
+    <section class="content">
+      <article class="card">
+        <h2>Assign User</h2>
+
+        <label for="assign-version">Questionnaire version</label>
+        <select id="assign-version"></select>
+
+        <label for="assign-user">User</label>
+        <select id="assign-user"></select>
+
+        <label for="assign-active">Active</label>
+        <select id="assign-active">
+          <option value="true">true</option>
+          <option value="false">false</option>
+        </select>
+
+        <button id="assign-btn">Create or update assignment</button>
+        <div id="assign-status" class="status"></div>
+      </article>
+
+      <article class="card">
+        <h2>Assignments</h2>
+        <div class="row">
+          <label for="filter-version">Filter version</label>
+          <select id="filter-version"></select>
+          <button id="refresh-btn" class="secondary">Refresh</button>
+        </div>
+        <div id="list-status" class="status"></div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Role</th>
+              <th>Version</th>
+              <th>Active</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="assignments-tbody"></tbody>
+        </table>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const QUESTIONNAIRE_ID = {{ questionnaire_id | tojson }};
+    const state = {
+      versions: [],
+      assignableVersions: [],
+      users: [],
+      assignments: [],
+    };
+
+    function setStatus(id, message, ok) {
+      const el = document.getElementById(id);
+      el.className = ok ? "status ok" : "status err";
+      el.textContent = message || "";
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = {};
+      }
+      if (!response.ok) {
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      return data;
+    }
+
+    function renderVersionSelects() {
+      const assignVersion = document.getElementById("assign-version");
+      const filterVersion = document.getElementById("filter-version");
+      assignVersion.innerHTML = "";
+      filterVersion.innerHTML = "";
+
+      const allOption = document.createElement("option");
+      allOption.value = "";
+      allOption.textContent = "All versions";
+      filterVersion.appendChild(allOption);
+
+      state.assignableVersions = state.versions.filter((item) => item.status === "published");
+
+      if (!state.assignableVersions.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No published versions";
+        assignVersion.appendChild(option);
+      } else {
+        for (const version of state.assignableVersions) {
+          const option = document.createElement("option");
+          option.value = version.id;
+          option.textContent = `v${version.version_number} (${version.status})`;
+          assignVersion.appendChild(option);
+        }
+      }
+
+      for (const version of state.versions) {
+        const option = document.createElement("option");
+        option.value = version.id;
+        option.textContent = `v${version.version_number} (${version.status})`;
+        filterVersion.appendChild(option);
+      }
+    }
+
+    function renderUserSelect() {
+      const select = document.getElementById("assign-user");
+      select.innerHTML = "";
+
+      if (!state.users.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No active users";
+        select.appendChild(option);
+        return;
+      }
+
+      for (const user of state.users) {
+        const option = document.createElement("option");
+        option.value = user.username;
+        option.textContent = `${user.username} (${user.role})`;
+        select.appendChild(option);
+      }
+    }
+
+    function renderAssignments() {
+      const tbody = document.getElementById("assignments-tbody");
+      tbody.innerHTML = "";
+      if (!state.assignments.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="5" class="muted">No assignments found for this questionnaire.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+
+      for (const item of state.assignments) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${item.username}</td>
+          <td>${item.user_role}</td>
+          <td>v${item.questionnaire_version_number}<div class="mono">${item.questionnaire_version_id}</div></td>
+          <td>${item.is_active}</td>
+          <td><button type="button" data-toggle-id="${item.id}" data-next-active="${item.is_active ? "false" : "true"}">${item.is_active ? "Deactivate" : "Activate"}</button></td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      for (const btn of tbody.querySelectorAll("[data-toggle-id]")) {
+        btn.addEventListener("click", async (event) => {
+          const assignmentId = event.currentTarget.getAttribute("data-toggle-id");
+          const nextActive = event.currentTarget.getAttribute("data-next-active") === "true";
+          try {
+            await requestJson(`/api/admin/assignments/${assignmentId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ is_active: nextActive }),
+            });
+            setStatus("list-status", "Assignment updated.", true);
+            await loadAssignments();
+          } catch (error) {
+            setStatus("list-status", error.message || String(error), false);
+          }
+        });
+      }
+    }
+
+    async function loadQuestionnaireMeta() {
+      const detail = await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}`);
+      document.getElementById("headline").textContent = `${detail.title} (${detail.slug})`;
+      state.versions = detail.versions || [];
+      renderVersionSelects();
+    }
+
+    async function loadAssignableUsers() {
+      const users = await requestJson("/api/admin/assignment-target-users");
+      state.users = users || [];
+      renderUserSelect();
+    }
+
+    async function loadAssignments() {
+      try {
+        const versionId = document.getElementById("filter-version").value;
+        const query = new URLSearchParams();
+        query.set("questionnaire_id", QUESTIONNAIRE_ID);
+        if (versionId) query.set("questionnaire_version_id", versionId);
+
+        const items = await requestJson(`/api/admin/assignments?${query.toString()}`);
+        state.assignments = items || [];
+        renderAssignments();
+        setStatus("list-status", `Loaded ${state.assignments.length} assignments.`, true);
+      } catch (error) {
+        state.assignments = [];
+        renderAssignments();
+        setStatus("list-status", error.message || String(error), false);
+      }
+    }
+
+    async function createOrUpdateAssignment() {
+      try {
+        const versionId = document.getElementById("assign-version").value;
+        const username = document.getElementById("assign-user").value;
+        const isActive = document.getElementById("assign-active").value === "true";
+
+        if (!versionId) {
+          throw new Error("Select a published version first.");
+        }
+        if (!username) {
+          throw new Error("Select a target user first.");
+        }
+
+        await requestJson("/api/admin/assignments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            target_username: username,
+            questionnaire_version_id: versionId,
+            is_active: isActive,
+          }),
+        });
+
+        setStatus("assign-status", "Assignment saved.", true);
+        await loadAssignments();
+      } catch (error) {
+        setStatus("assign-status", error.message || String(error), false);
+      }
+    }
+
+    async function init() {
+      try {
+        const me = await requestJson("/api/auth/me");
+        document.getElementById("whoami").textContent = `Signed in as ${me.username} (${me.role})`;
+      } catch (error) {
+        document.getElementById("whoami").textContent = error.message || String(error);
+      }
+
+      await loadQuestionnaireMeta();
+      await loadAssignableUsers();
+      await loadAssignments();
+    }
+
+    document.getElementById("refresh-btn").addEventListener("click", loadAssignments);
+    document.getElementById("filter-version").addEventListener("change", loadAssignments);
+    document.getElementById("assign-btn").addEventListener("click", createOrUpdateAssignment);
+
+    init().catch((error) => {
+      setStatus("list-status", error.message || String(error), false);
+    });
+  </script>
+</body>
+</html>

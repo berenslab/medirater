@@ -18,10 +18,10 @@ def _is_superadmin(user: User) -> bool:
     return user.role == Role.SUPERADMIN
 
 
-def _to_asset_out(asset: Asset) -> AssetOut:
+def _to_asset_out(asset: Asset, *, owner_username: str) -> AssetOut:
     return AssetOut(
         id=asset.id,
-        owner_user_id=asset.owner_user_id,
+        owner_username=owner_username,
         file_name=asset.file_name,
         original_path=asset.original_path,
         mime_type=asset.mime_type,
@@ -92,7 +92,7 @@ async def upload_assets(
     db.commit()
     for asset in created_assets:
         db.refresh(asset)
-    return [_to_asset_out(asset) for asset in created_assets]
+    return [_to_asset_out(asset, owner_username=current_user.username) for asset in created_assets]
 
 
 @router.get("", response_model=list[AssetOut])
@@ -102,11 +102,16 @@ def list_assets(
     limit: int = 200,
 ) -> list[AssetOut]:
     bounded_limit = max(1, min(limit, 1000))
-    stmt = select(Asset).order_by(desc(Asset.created_at)).limit(bounded_limit)
+    stmt = (
+        select(Asset, User.username)
+        .join(User, User.id == Asset.owner_user_id)
+        .order_by(desc(Asset.created_at))
+        .limit(bounded_limit)
+    )
     if not _is_superadmin(current_user):
         stmt = stmt.where(Asset.owner_user_id == current_user.id)
-    assets = db.execute(stmt).scalars().all()
-    return [_to_asset_out(asset) for asset in assets]
+    rows = db.execute(stmt).all()
+    return [_to_asset_out(asset, owner_username=owner_username) for asset, owner_username in rows]
 
 
 @router.get("/{asset_id}", response_model=AssetOut)
@@ -120,7 +125,8 @@ def get_asset_metadata(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     if not _is_superadmin(current_user) and asset.owner_user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Asset access denied")
-    return _to_asset_out(asset)
+    owner_username = db.scalar(select(User.username).where(User.id == asset.owner_user_id))
+    return _to_asset_out(asset, owner_username=owner_username or "")
 
 
 @router.get("/{asset_id}/content")

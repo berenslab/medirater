@@ -167,6 +167,25 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
         assert detail_json["items"][0]["question_prompt_text"] == "How severe is this case?"
         assert detail_json["items"][0]["answer_value"] == "severe"
 
+        exported_csv = admin_a_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/responses/export.csv"
+        )
+        assert exported_csv.status_code == 200
+        assert exported_csv.headers["content-type"].startswith("text/csv")
+        assert "attachment;" in exported_csv.headers.get("content-disposition", "")
+        csv_body = exported_csv.text
+        assert "questionnaire_title" in csv_body
+        assert "username" in csv_body
+        assert "v1_q1" in csv_body
+        assert "alice" in csv_body
+        assert "severe" in csv_body
+
+        exported_csv_filtered = admin_a_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/responses/export.csv?version_id={version_id}"
+        )
+        assert exported_csv_filtered.status_code == 200
+        assert exported_csv_filtered.text == csv_body
+
     with TestClient(app) as admin_b_client:
         _signup(admin_b_client, "admin_b", token=admin_b_token.json()["token"])
 
@@ -174,6 +193,11 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
             f"/api/admin/questionnaires/{questionnaire_id}/responses"
         )
         assert forbidden_api.status_code == 403
+
+        forbidden_export = admin_b_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/responses/export.csv"
+        )
+        assert forbidden_export.status_code == 403
 
         forbidden_page = admin_b_client.get(
             f"/questionnaires/{questionnaire_id}/responses",
@@ -195,3 +219,9 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
         )
         assert response_detail.status_code == 200
         assert response_detail.json()["items"][0]["answer_value"] == "severe"
+
+        super_export = super_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/responses/export.csv"
+        )
+        assert super_export.status_code == 200
+        assert "alice" in super_export.text
