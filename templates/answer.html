@@ -59,11 +59,42 @@
     p { margin: 0 0 8px; }
     .muted { color: var(--muted); }
     .instructions {
-      white-space: pre-wrap;
       background: #fff;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px;
+      line-height: 1.5;
+    }
+    .instructions :first-child {
+      margin-top: 0;
+    }
+    .instructions :last-child {
+      margin-bottom: 0;
+    }
+    .instructions p,
+    .instructions ul,
+    .instructions ol,
+    .instructions blockquote,
+    .instructions pre {
+      margin: 0 0 8px;
+    }
+    .instructions code {
+      background: #eff4f8;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+    }
+    .instructions pre {
+      background: #eff4f8;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      overflow-x: auto;
+    }
+    .instructions pre code {
+      background: transparent;
+      padding: 0;
     }
     .required { color: #b42318; }
     .media-strip {
@@ -194,6 +225,260 @@
         throw new Error(data.detail || `Request failed (${response.status})`);
       }
       return data;
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function isSafeUrl(value) {
+      const url = String(value || "").trim();
+      if (!url) return false;
+      if (url.startsWith("/") || url.startsWith("#")) return true;
+      if (/^https?:\/\//i.test(url)) return true;
+      if (/^mailto:/i.test(url)) return true;
+      if (/^data:image\//i.test(url)) return true;
+      return false;
+    }
+
+    function sanitizeHtml(html) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${String(html || "")}</div>`, "text/html");
+      const root = doc.body.firstElementChild;
+      if (!root) return "";
+
+      const allowedTags = new Set([
+        "a",
+        "b",
+        "blockquote",
+        "br",
+        "code",
+        "em",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "hr",
+        "i",
+        "img",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "strong",
+        "ul",
+      ]);
+      const blockedTags = new Set(["script", "style", "iframe", "object", "embed", "svg", "math"]);
+
+      function sanitizeNode(node) {
+        for (const child of Array.from(node.childNodes)) {
+          if (child.nodeType === Node.COMMENT_NODE) {
+            child.remove();
+            continue;
+          }
+          if (child.nodeType !== Node.ELEMENT_NODE) {
+            continue;
+          }
+
+          const el = child;
+          const tag = el.tagName.toLowerCase();
+
+          if (blockedTags.has(tag)) {
+            el.remove();
+            continue;
+          }
+
+          if (!allowedTags.has(tag)) {
+            const fragment = doc.createDocumentFragment();
+            while (el.firstChild) {
+              fragment.appendChild(el.firstChild);
+            }
+            el.replaceWith(fragment);
+            sanitizeNode(node);
+            continue;
+          }
+
+          for (const attr of Array.from(el.attributes)) {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith("on") || name === "style") {
+              el.removeAttribute(attr.name);
+              continue;
+            }
+            if (tag === "a" && (name === "href" || name === "target" || name === "rel")) {
+              continue;
+            }
+            if (tag === "img" && (name === "src" || name === "alt" || name === "title")) {
+              continue;
+            }
+            el.removeAttribute(attr.name);
+          }
+
+          if (tag === "a") {
+            const href = el.getAttribute("href");
+            if (!isSafeUrl(href)) {
+              el.removeAttribute("href");
+            }
+            el.setAttribute("target", "_blank");
+            el.setAttribute("rel", "noopener noreferrer");
+          }
+
+          if (tag === "img") {
+            const src = el.getAttribute("src");
+            if (!isSafeUrl(src)) {
+              el.remove();
+              continue;
+            }
+          }
+
+          sanitizeNode(el);
+        }
+      }
+
+      sanitizeNode(root);
+      return root.innerHTML;
+    }
+
+    function renderInlineMarkdown(text) {
+      let html = String(text || "");
+      html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>');
+      html = html.replace(/`([^`]+)`/g, (_match, code) => `<code>${escapeHtml(code)}</code>`);
+      html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+      return html;
+    }
+
+    function renderMarkdownToHtml(markdown) {
+      const raw = String(markdown || "").replaceAll("\r\n", "\n");
+      if (!raw.trim()) {
+        return "<p>No instructions.</p>";
+      }
+
+      const lines = raw.split("\n");
+      const html = [];
+      let paragraph = [];
+      let inUl = false;
+      let inOl = false;
+      let inCode = false;
+      let codeLines = [];
+
+      function flushParagraph() {
+        if (!paragraph.length) return;
+        html.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+        paragraph = [];
+      }
+
+      function closeLists() {
+        if (inUl) {
+          html.push("</ul>");
+          inUl = false;
+        }
+        if (inOl) {
+          html.push("</ol>");
+          inOl = false;
+        }
+      }
+
+      for (const originalLine of lines) {
+        const line = originalLine.trim();
+
+        if (line.startsWith("```")) {
+          flushParagraph();
+          closeLists();
+          if (inCode) {
+            html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+            inCode = false;
+            codeLines = [];
+          } else {
+            inCode = true;
+            codeLines = [];
+          }
+          continue;
+        }
+
+        if (inCode) {
+          codeLines.push(originalLine);
+          continue;
+        }
+
+        if (!line) {
+          flushParagraph();
+          closeLists();
+          continue;
+        }
+
+        if (line.startsWith("<") && line.endsWith(">")) {
+          flushParagraph();
+          closeLists();
+          html.push(line);
+          continue;
+        }
+
+        const heading = line.match(/^(#{1,6})\s+(.+)$/);
+        if (heading) {
+          flushParagraph();
+          closeLists();
+          const level = heading[1].length;
+          html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+          continue;
+        }
+
+        const unordered = line.match(/^[-*]\s+(.+)$/);
+        if (unordered) {
+          flushParagraph();
+          if (inOl) {
+            html.push("</ol>");
+            inOl = false;
+          }
+          if (!inUl) {
+            html.push("<ul>");
+            inUl = true;
+          }
+          html.push(`<li>${renderInlineMarkdown(unordered[1])}</li>`);
+          continue;
+        }
+
+        const ordered = line.match(/^\d+\.\s+(.+)$/);
+        if (ordered) {
+          flushParagraph();
+          if (inUl) {
+            html.push("</ul>");
+            inUl = false;
+          }
+          if (!inOl) {
+            html.push("<ol>");
+            inOl = true;
+          }
+          html.push(`<li>${renderInlineMarkdown(ordered[1])}</li>`);
+          continue;
+        }
+
+        const quote = line.match(/^>\s?(.+)$/);
+        if (quote) {
+          flushParagraph();
+          closeLists();
+          html.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);
+          continue;
+        }
+
+        if (inUl || inOl) {
+          closeLists();
+        }
+        paragraph.push(line);
+      }
+
+      if (inCode) {
+        html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      }
+      flushParagraph();
+      closeLists();
+      return sanitizeHtml(html.join(""));
     }
 
     function clampCaseIndex(index, total) {
@@ -412,7 +697,9 @@
       const currentCase = cases[state.currentCaseIndex];
 
       document.getElementById("headline").textContent = `${state.detail.title} v${state.detail.version_number}`;
-      document.getElementById("instructions").textContent = state.detail.instructions_markdown || "No instructions.";
+      document.getElementById("instructions").innerHTML = renderMarkdownToHtml(
+        state.detail.instructions_markdown
+      );
 
       if (!currentCase) {
         document.getElementById("progress-title").textContent = "No questions";

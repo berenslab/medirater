@@ -127,6 +127,7 @@
     .ok { color: var(--ok); }
     .err { color: var(--err); }
     .muted { color: var(--muted); }
+    .subtext { color: var(--muted); font-size: 0.84rem; margin-top: 4px; }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -294,9 +295,10 @@
         const answerLink = item.latest_version_status === "published" && item.latest_version_id
           ? ` | <a href="/answer/${item.latest_version_id}/consent">Answer</a>`
           : "";
+        const description = item.description ? `<div class="subtext">${item.description}</div>` : "";
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${item.title}</td>
+          <td>${item.title}${description}</td>
           <td>${item.owner_admin_username}</td>
           <td>${latest}</td>
           <td><a href="/questionnaires/${item.id}/design">Design</a>${assignmentsLink}${responsesLink}${answerLink} | <a href="#" class="danger-link" data-delete-questionnaire-id="${item.id}">Delete</a></td>
