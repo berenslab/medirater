@@ -214,6 +214,7 @@
         const latest = item.latest_version_number
           ? `v${item.latest_version_number} (${item.latest_version_status})`
           : "-";
+        const responsesLink = ` | <a href="/questionnaires/${item.id}/responses">Responses</a>`;
         const answerLink = item.latest_version_status === "published" && item.latest_version_id
           ? ` | <a href="/answer/${item.latest_version_id}/consent">Answer</a>`
           : "";
@@ -222,7 +223,7 @@
           <td>${item.title}</td>
           <td>${item.owner_admin_id}</td>
           <td>${latest}</td>
-          <td><a href="/questionnaires/${item.id}/design">Design</a>${answerLink}</td>
+          <td><a href="/questionnaires/${item.id}/design">Design</a>${responsesLink}${answerLink}</td>
         `;
         tbody.appendChild(tr);
       }

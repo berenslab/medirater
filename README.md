@@ -71,6 +71,7 @@ uv run uvicorn app.main:app --reload
 - use bulk upload/import as the default question creation flow
 - manually edit/delete existing generated questions when needed
 - publish draft version
+ - open `/questionnaires/{questionnaire_id}/responses` to review submitted answers
 5. Go to `/settings` for:
 - passkey management
 - signup mode control (superadmin only)

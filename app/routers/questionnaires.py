@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
@@ -15,11 +15,16 @@ from app.models import (
     Questionnaire,
     QuestionnaireVersion,
     QuestionnaireVersionStatus,
+    Response,
+    ResponseItem,
     Role,
     User,
     utcnow,
 )
 from app.schemas import (
+    AdminResponseDetailOut,
+    AdminResponseItemOut,
+    AdminResponseSummaryOut,
     BulkGeneratedQuestionPreview,
     BulkRecipeApplyRequest,
     BulkRecipeApplyPreviewRequest,
@@ -62,6 +67,13 @@ def _parse_json_object(value: str) -> dict:
     if isinstance(parsed, dict):
         return parsed
     return {}
+
+
+def _parse_json_any(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return None
 
 
 def _to_question_out(question: Question) -> QuestionOut:
@@ -456,6 +468,115 @@ def get_questionnaire(
         created_at=questionnaire.created_at,
         updated_at=questionnaire.updated_at,
         versions=[_to_version_summary_out(version) for version in versions],
+    )
+
+
+@router.get("/{questionnaire_id}/responses", response_model=list[AdminResponseSummaryOut])
+def list_questionnaire_responses(
+    questionnaire_id: str,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    version_id: str | None = Query(default=None),
+    user_id: str | None = Query(default=None),
+) -> list[AdminResponseSummaryOut]:
+    questionnaire = _get_accessible_questionnaire(
+        db, questionnaire_id=questionnaire_id, user=current_user
+    )
+    stmt = (
+        select(Response, User, QuestionnaireVersion)
+        .join(User, User.id == Response.user_id)
+        .join(QuestionnaireVersion, QuestionnaireVersion.id == Response.questionnaire_version_id)
+        .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+        .order_by(desc(Response.submitted_at))
+        .limit(1000)
+    )
+    if version_id:
+        stmt = stmt.where(Response.questionnaire_version_id == version_id)
+    if user_id:
+        stmt = stmt.where(Response.user_id == user_id)
+
+    rows = db.execute(stmt).all()
+    if not rows:
+        return []
+
+    response_ids = [response.id for response, _, _ in rows]
+    count_rows = db.execute(
+        select(ResponseItem.response_id, func.count(ResponseItem.id))
+        .where(ResponseItem.response_id.in_(response_ids))
+        .group_by(ResponseItem.response_id)
+    ).all()
+    answer_count_by_response_id = {
+        response_id: int(answer_count)
+        for response_id, answer_count in count_rows
+    }
+
+    return [
+        AdminResponseSummaryOut(
+            response_id=response.id,
+            questionnaire_id=questionnaire.id,
+            questionnaire_version_id=version.id,
+            questionnaire_version_number=version.version_number,
+            user_id=user.id,
+            username=user.username,
+            user_role=user.role,
+            submitted_at=response.submitted_at,
+            answer_count=answer_count_by_response_id.get(response.id, 0),
+        )
+        for response, user, version in rows
+    ]
+
+
+@router.get(
+    "/{questionnaire_id}/responses/{response_id}",
+    response_model=AdminResponseDetailOut,
+)
+def get_questionnaire_response_detail(
+    questionnaire_id: str,
+    response_id: str,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> AdminResponseDetailOut:
+    questionnaire = _get_accessible_questionnaire(
+        db, questionnaire_id=questionnaire_id, user=current_user
+    )
+    response_row = db.execute(
+        select(Response, User, QuestionnaireVersion)
+        .join(User, User.id == Response.user_id)
+        .join(QuestionnaireVersion, QuestionnaireVersion.id == Response.questionnaire_version_id)
+        .where(Response.id == response_id)
+        .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+    ).first()
+    if not response_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Response not found")
+    response, user, version = response_row
+
+    item_rows = db.execute(
+        select(ResponseItem, Question)
+        .join(Question, Question.id == ResponseItem.question_id)
+        .where(ResponseItem.response_id == response.id)
+        .order_by(Question.position)
+    ).all()
+    items: list[AdminResponseItemOut] = [
+        AdminResponseItemOut(
+            question_id=question.id,
+            question_position=question.position,
+            question_prompt_text=question.prompt_text,
+            question_type=question.question_type,
+            answer_value=_parse_json_any(item.answer_json),
+        )
+        for item, question in item_rows
+    ]
+
+    return AdminResponseDetailOut(
+        response_id=response.id,
+        questionnaire_id=questionnaire.id,
+        questionnaire_version_id=version.id,
+        questionnaire_version_number=version.version_number,
+        user_id=user.id,
+        username=user.username,
+        user_role=user.role,
+        submitted_at=response.submitted_at,
+        items=items,
     )
 
 

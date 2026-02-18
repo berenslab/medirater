@@ -253,6 +253,38 @@ class QuestionnaireDetailOut(BaseModel):
     versions: list[QuestionnaireVersionSummaryOut]
 
 
+class AdminResponseSummaryOut(BaseModel):
+    response_id: str
+    questionnaire_id: str
+    questionnaire_version_id: str
+    questionnaire_version_number: int
+    user_id: str
+    username: str
+    user_role: Role
+    submitted_at: datetime
+    answer_count: int
+
+
+class AdminResponseItemOut(BaseModel):
+    question_id: str
+    question_position: int
+    question_prompt_text: str
+    question_type: QuestionType
+    answer_value: Any
+
+
+class AdminResponseDetailOut(BaseModel):
+    response_id: str
+    questionnaire_id: str
+    questionnaire_version_id: str
+    questionnaire_version_number: int
+    user_id: str
+    username: str
+    user_role: Role
+    submitted_at: datetime
+    items: list[AdminResponseItemOut] = Field(default_factory=list)
+
+
 class AssignedQuestionnaireOut(BaseModel):
     questionnaire_id: str
     questionnaire_version_id: str
