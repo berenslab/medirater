@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      --bg: #f7fafc;
+      --panel: #ffffff;
+      --text: #1a202c;
+      --muted: #4a5568;
+      --accent: #0b7285;
+      --danger: #c92a2a;
+      --border: #d9e2ec;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 10%, #d6f5ff 0, transparent 35%),
+        radial-gradient(circle at 90% 90%, #ffe8cc 0, transparent 30%),
+        var(--bg);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(560px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 12px 30px rgba(23, 43, 77, 0.08);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    p { margin: 0 0 16px; color: var(--muted); }
+    label { display: block; font-size: 0.92rem; margin: 12px 0 6px; }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 1rem;
+    }
+    button {
+      margin-top: 16px;
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 11px 12px;
+      background: var(--accent);
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    .status { margin-top: 14px; min-height: 20px; font-size: 0.95rem; }
+    .err { color: var(--danger); }
+    .ok { color: #2b8a3e; }
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    .row a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>{{ heading }}</h1>
+    <p>{{ token_note }}</p>
+    <form id="signup-form">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="32" />
+
+      <div id="token-wrap">
+        <label for="token">Signup token</label>
+        <input id="token" name="token" {% if token_required %}required{% endif %} />
+      </div>
+
+      <button id="submit-btn" type="submit">Create account</button>
+    </form>
+    <div id="status" class="status"></div>
+    {% if links %}
+    <div class="row">
+      {% for link in links %}
+      <a href="{{ link.href }}">{{ link.label }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </main>
+
+  <script>
+    const TOKEN_REQUIRED = {{ "true" if token_required else "false" }};
+    const MODE_AWARE = {{ "true" if mode_aware else "false" }};
+
+    function setStatus(message, ok) {
+      const status = document.getElementById("status");
+      status.className = ok ? "status ok" : "status err";
+      status.textContent = message;
+    }
+
+    function base64urlToUint8Array(base64url) {
+      const pad = "=".repeat((4 - (base64url.length % 4)) % 4);
+      const base64 = (base64url + pad).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) {
+        bytes[i] = raw.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    function uint8ArrayToBase64url(bytes) {
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    }
+
+    function serializeRegistrationCredential(credential) {
+      return {
+        id: credential.id,
+        rawId: uint8ArrayToBase64url(new Uint8Array(credential.rawId)),
+        type: credential.type,
+        response: {
+          attestationObject: uint8ArrayToBase64url(new Uint8Array(credential.response.attestationObject)),
+          clientDataJSON: uint8ArrayToBase64url(new Uint8Array(credential.response.clientDataJSON)),
+          transports: credential.response.getTransports ? credential.response.getTransports() : [],
+        },
+        clientExtensionResults: credential.getClientExtensionResults
+          ? credential.getClientExtensionResults()
+          : {},
+      };
+    }
+
+    async function postJson(url, payload) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_err) {
+        // no-op
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Request failed");
+      }
+
+      return data;
+    }
+
+    async function initSignupMode() {
+      const tokenWrap = document.getElementById("token-wrap");
+      const tokenInput = document.getElementById("token");
+
+      if (TOKEN_REQUIRED) {
+        tokenWrap.style.display = "block";
+        tokenInput.required = true;
+        return;
+      }
+
+      if (!MODE_AWARE) {
+        tokenWrap.style.display = "none";
+        tokenInput.required = false;
+        return;
+      }
+
+      try {
+        const modeResp = await fetch("/api/auth/public-signup-mode", { credentials: "include" });
+        const modeJson = await modeResp.json();
+        if (modeResp.ok && modeJson.mode === "invite_only") {
+          tokenWrap.style.display = "block";
+          tokenInput.required = true;
+          tokenInput.placeholder = "Invite token required";
+        } else {
+          tokenWrap.style.display = "none";
+          tokenInput.required = false;
+        }
+      } catch (_err) {
+        tokenWrap.style.display = "none";
+        tokenInput.required = false;
+      }
+    }
+
+    document.getElementById("signup-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setStatus("", false);
+
+      const submitButton = document.getElementById("submit-btn");
+      submitButton.disabled = true;
+
+      const username = document.getElementById("username").value.trim();
+      const token = document.getElementById("token").value.trim();
+
+      if (TOKEN_REQUIRED && !token) {
+        setStatus("Signup token is required.", false);
+        submitButton.disabled = false;
+        return;
+      }
+
+      if (!window.PublicKeyCredential || !navigator.credentials) {
+        setStatus("Passkeys are not supported in this browser.", false);
+        submitButton.disabled = false;
+        return;
+      }
+
+      try {
+        const beginPayload = { username };
+        if (token) beginPayload.token = token;
+
+        const begin = await postJson("/api/auth/signup/begin", beginPayload);
+
+        const publicKeyOptions = begin.public_key;
+        publicKeyOptions.challenge = base64urlToUint8Array(publicKeyOptions.challenge);
+        publicKeyOptions.user.id = base64urlToUint8Array(publicKeyOptions.user.id);
+        publicKeyOptions.excludeCredentials = (publicKeyOptions.excludeCredentials || []).map((item) => ({
+          ...item,
+          id: base64urlToUint8Array(item.id),
+        }));
+
+        const credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
+        if (!credential || !credential.rawId) {
+          throw new Error("Failed to create passkey credential");
+        }
+
+        await postJson("/api/auth/signup/complete", {
+          challenge_id: begin.challenge_id,
+          credential: serializeRegistrationCredential(credential),
+        });
+
+        setStatus("Signup successful. Redirecting...", true);
+        window.setTimeout(() => { window.location.href = "/me"; }, 500);
+      } catch (error) {
+        setStatus(error.message || String(error), false);
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+
+    initSignupMode();
+  </script>
+</body>
+</html>

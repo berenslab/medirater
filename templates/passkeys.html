@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Passkey Management</title>
+  <style>
+    :root {
+      --bg: #f7fafc;
+      --panel: #ffffff;
+      --text: #1a202c;
+      --muted: #4a5568;
+      --accent: #0b7285;
+      --danger: #c92a2a;
+      --border: #d9e2ec;
+      --ok: #2b8a3e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 10%, #d6f5ff 0, transparent 35%),
+        radial-gradient(circle at 90% 90%, #ffe8cc 0, transparent 30%),
+        var(--bg);
+      padding: 24px;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 12px 30px rgba(23, 43, 77, 0.08);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    p { margin: 0 0 14px; color: var(--muted); }
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    .row a { color: var(--accent); text-decoration: none; }
+    .status { margin-top: 12px; min-height: 20px; font-size: 0.95rem; }
+    .err { color: var(--danger); }
+    .ok { color: var(--ok); }
+    .add {
+      margin-top: 14px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fbfdff;
+    }
+    label {
+      display: block;
+      margin: 10px 0 6px;
+      font-size: 0.9rem;
+    }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 1rem;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+    }
+    .danger {
+      background: var(--danger);
+    }
+    .list {
+      margin-top: 16px;
+      display: grid;
+      gap: 10px;
+    }
+    .item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: #fff;
+    }
+    .meta {
+      font-size: 0.86rem;
+      color: var(--muted);
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+    .actions {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Passkey management</h1>
+    <p id="user-line">Loading user...</p>
+    <div class="row">
+      <a href="/passkeys">Passkeys</a>
+      {% if show_admin_link %}<a href="/admin">Admin</a>{% endif %}
+      <a href="/me">Session view</a>
+    </div>
+
+    <section class="add">
+      <label for="new-label">New passkey label</label>
+      <input id="new-label" value="Additional passkey" maxlength="120" />
+      <div class="actions">
+        <button id="add-btn">Add passkey</button>
+        <button id="refresh-btn" type="button">Refresh</button>
+        <button id="logout-btn" class="danger" type="button">Logout</button>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="list" id="passkey-list"></section>
+  </main>
+
+  <script>
+    function setStatus(message, ok) {
+      const status = document.getElementById("status");
+      status.className = ok ? "status ok" : "status err";
+      status.textContent = message;
+    }
+
+    function base64urlToUint8Array(base64url) {
+      const pad = "=".repeat((4 - (base64url.length % 4)) % 4);
+      const base64 = (base64url + pad).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) {
+        bytes[i] = raw.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    function uint8ArrayToBase64url(bytes) {
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    }
+
+    function serializeRegistrationCredential(credential) {
+      return {
+        id: credential.id,
+        rawId: uint8ArrayToBase64url(new Uint8Array(credential.rawId)),
+        type: credential.type,
+        response: {
+          attestationObject: uint8ArrayToBase64url(new Uint8Array(credential.response.attestationObject)),
+          clientDataJSON: uint8ArrayToBase64url(new Uint8Array(credential.response.clientDataJSON)),
+          transports: credential.response.getTransports ? credential.response.getTransports() : [],
+        },
+        clientExtensionResults: credential.getClientExtensionResults
+          ? credential.getClientExtensionResults()
+          : {},
+      };
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_err) {
+        // no-op
+      }
+      if (!response.ok) {
+        throw new Error(data.detail || "Request failed");
+      }
+      return data;
+    }
+
+    async function fetchUserAndPasskeys() {
+      const [user, passkeys] = await Promise.all([
+        requestJson("/api/auth/me"),
+        requestJson("/api/passkeys"),
+      ]);
+      return { user, passkeys };
+    }
+
+    function renderPasskeys(passkeys) {
+      const container = document.getElementById("passkey-list");
+      container.innerHTML = "";
+
+      if (!passkeys.length) {
+        const empty = document.createElement("p");
+        empty.textContent = "No passkeys found.";
+        container.appendChild(empty);
+        return;
+      }
+
+      for (const passkey of passkeys) {
+        const item = document.createElement("article");
+        item.className = "item";
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = `Credential: ${passkey.credential_id}`;
+        item.appendChild(meta);
+
+        const label = document.createElement("label");
+        label.textContent = "Label";
+        item.appendChild(label);
+
+        const input = document.createElement("input");
+        input.value = passkey.label;
+        input.maxLength = 120;
+        item.appendChild(input);
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+
+        const renameButton = document.createElement("button");
+        renameButton.textContent = "Save label";
+        renameButton.addEventListener("click", async () => {
+          try {
+            const nextLabel = input.value.trim();
+            if (!nextLabel) {
+              throw new Error("Label cannot be empty");
+            }
+            await requestJson(`/api/passkeys/${passkey.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ label: nextLabel }),
+            });
+            setStatus("Passkey label updated.", true);
+            await refresh();
+          } catch (error) {
+            setStatus(error.message || String(error), false);
+          }
+        });
+        actions.appendChild(renameButton);
+
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "danger";
+        deleteButton.textContent = "Delete passkey";
+        deleteButton.addEventListener("click", async () => {
+          try {
+            await requestJson(`/api/passkeys/${passkey.id}`, { method: "DELETE" });
+            setStatus("Passkey deleted.", true);
+            await refresh();
+          } catch (error) {
+            setStatus(error.message || String(error), false);
+          }
+        });
+        actions.appendChild(deleteButton);
+
+        item.appendChild(actions);
+        container.appendChild(item);
+      }
+    }
+
+    async function refresh() {
+      try {
+        const { user, passkeys } = await fetchUserAndPasskeys();
+        document.getElementById("user-line").textContent = `Signed in as ${user.username} (${user.role})`;
+        renderPasskeys(passkeys);
+      } catch (error) {
+        setStatus(error.message || String(error), false);
+      }
+    }
+
+    document.getElementById("refresh-btn").addEventListener("click", refresh);
+
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await requestJson("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    });
+
+    document.getElementById("add-btn").addEventListener("click", async () => {
+      setStatus("", false);
+      if (!window.PublicKeyCredential || !navigator.credentials) {
+        setStatus("Passkeys are not supported in this browser.", false);
+        return;
+      }
+
+      const addButton = document.getElementById("add-btn");
+      addButton.disabled = true;
+
+      try {
+        const begin = await requestJson("/api/passkeys/begin-add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+
+        const publicKeyOptions = begin.public_key;
+        publicKeyOptions.challenge = base64urlToUint8Array(publicKeyOptions.challenge);
+        publicKeyOptions.user.id = base64urlToUint8Array(publicKeyOptions.user.id);
+        publicKeyOptions.excludeCredentials = (publicKeyOptions.excludeCredentials || []).map((item) => ({
+          ...item,
+          id: base64urlToUint8Array(item.id),
+        }));
+
+        const credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
+        if (!credential || !credential.rawId) {
+          throw new Error("Failed to create passkey credential");
+        }
+
+        const label = (document.getElementById("new-label").value || "").trim() || "Additional passkey";
+
+        await requestJson("/api/passkeys/complete-add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            challenge_id: begin.challenge_id,
+            credential: serializeRegistrationCredential(credential),
+            label,
+          }),
+        });
+
+        setStatus("Passkey added.", true);
+        await refresh();
+      } catch (error) {
+        setStatus(error.message || String(error), false);
+      } finally {
+        addButton.disabled = false;
+      }
+    });
+
+    refresh();
+  </script>
+</body>
+</html>

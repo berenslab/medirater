@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Session</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      background: #f8fafc;
+      color: #1f2937;
+      padding: 24px;
+    }
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #dbe3eb;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    pre {
+      background: #f1f5f9;
+      border-radius: 10px;
+      padding: 12px;
+      overflow: auto;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      background: #0b7285;
+      color: #fff;
+      cursor: pointer;
+    }
+    a { color: #0b7285; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Current session</h1>
+    <p>
+      <a href="/passkeys">Passkeys</a>{% if show_admin_link %} | <a href="/admin">Admin</a>{% endif %}
+    </p>
+    <h3>User</h3>
+    <pre id="user-json">Loading...</pre>
+    <h3>Passkeys</h3>
+    <pre id="passkeys-json">Loading...</pre>
+    <div class="row">
+      <button id="logout-btn">Logout</button>
+      <button id="refresh-btn">Refresh</button>
+    </div>
+  </main>
+  <script>
+    async function fetchJson(url) {
+      const r = await fetch(url, { credentials: "include" });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.detail || "Request failed");
+      }
+      return r.json();
+    }
+
+    async function refresh() {
+      try {
+        const user = await fetchJson("/api/auth/me");
+        const passkeys = await fetchJson("/api/passkeys");
+        document.getElementById("user-json").textContent = JSON.stringify(user, null, 2);
+        document.getElementById("passkeys-json").textContent = JSON.stringify(passkeys, null, 2);
+      } catch (error) {
+        document.getElementById("user-json").textContent = error.message;
+        document.getElementById("passkeys-json").textContent = "[]";
+      }
+    }
+
+    document.getElementById("refresh-btn").addEventListener("click", refresh);
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      window.location.href = "/login";
+    });
+
+    refresh();
+  </script>
+</body>
+</html>

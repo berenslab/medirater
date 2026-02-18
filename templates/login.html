@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      --bg: #f7fafc;
+      --panel: #ffffff;
+      --text: #1a202c;
+      --muted: #4a5568;
+      --accent: #0b7285;
+      --danger: #c92a2a;
+      --border: #d9e2ec;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 10%, #d6f5ff 0, transparent 35%),
+        radial-gradient(circle at 90% 90%, #ffe8cc 0, transparent 30%),
+        var(--bg);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(560px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 12px 30px rgba(23, 43, 77, 0.08);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    p { margin: 0 0 16px; color: var(--muted); }
+    label { display: block; font-size: 0.92rem; margin: 12px 0 6px; }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 1rem;
+    }
+    button {
+      margin-top: 16px;
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 11px 12px;
+      background: var(--accent);
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    .status { margin-top: 14px; min-height: 20px; font-size: 0.95rem; }
+    .err { color: var(--danger); }
+    .ok { color: #2b8a3e; }
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    .row a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>{{ heading }}</h1>
+    <p>{{ note }}</p>
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required minlength="3" maxlength="32" />
+
+      <button id="submit-btn" type="submit">Login with passkey</button>
+    </form>
+    <div id="status" class="status"></div>
+    <div class="row">
+      <a href="/signup">Signup</a>
+    </div>
+  </main>
+
+  <script>
+    function setStatus(message, ok) {
+      const status = document.getElementById("status");
+      status.className = ok ? "status ok" : "status err";
+      status.textContent = message;
+    }
+
+    function base64urlToUint8Array(base64url) {
+      const pad = "=".repeat((4 - (base64url.length % 4)) % 4);
+      const base64 = (base64url + pad).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) {
+        bytes[i] = raw.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    function uint8ArrayToBase64url(bytes) {
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    }
+
+    function serializeAuthenticationCredential(credential) {
+      const response = credential.response;
+      return {
+        id: credential.id,
+        rawId: uint8ArrayToBase64url(new Uint8Array(credential.rawId)),
+        type: credential.type,
+        response: {
+          authenticatorData: uint8ArrayToBase64url(new Uint8Array(response.authenticatorData)),
+          clientDataJSON: uint8ArrayToBase64url(new Uint8Array(response.clientDataJSON)),
+          signature: uint8ArrayToBase64url(new Uint8Array(response.signature)),
+          userHandle: response.userHandle
+            ? uint8ArrayToBase64url(new Uint8Array(response.userHandle))
+            : null,
+        },
+        clientExtensionResults: credential.getClientExtensionResults
+          ? credential.getClientExtensionResults()
+          : {},
+      };
+    }
+
+    async function postJson(url, payload) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_err) {
+        // no-op
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Request failed");
+      }
+
+      return data;
+    }
+
+    document.getElementById("login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setStatus("", false);
+
+      const submitButton = document.getElementById("submit-btn");
+      submitButton.disabled = true;
+
+      const username = document.getElementById("username").value.trim();
+
+      if (!window.PublicKeyCredential || !navigator.credentials) {
+        setStatus("Passkeys are not supported in this browser.", false);
+        submitButton.disabled = false;
+        return;
+      }
+
+      try {
+        const begin = await postJson("/api/auth/login/begin", { username });
+        const publicKeyOptions = begin.public_key;
+        publicKeyOptions.challenge = base64urlToUint8Array(publicKeyOptions.challenge);
+        publicKeyOptions.allowCredentials = (publicKeyOptions.allowCredentials || []).map((item) => ({
+          ...item,
+          id: base64urlToUint8Array(item.id),
+        }));
+
+        const assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
+        if (!assertion || !assertion.rawId) {
+          throw new Error("Failed to verify passkey");
+        }
+
+        await postJson("/api/auth/login/complete", {
+          challenge_id: begin.challenge_id,
+          credential: serializeAuthenticationCredential(assertion),
+        });
+
+        setStatus("Login successful. Redirecting...", true);
+        window.setTimeout(() => { window.location.href = "/me"; }, 400);
+      } catch (error) {
+        setStatus(error.message || String(error), false);
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

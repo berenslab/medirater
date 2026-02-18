@@ -1,0 +1,27 @@
+[project]
+name = "medirator"
+version = "0.1.0"
+description = "FastAPI-based medical questionnaire platform for clinicians"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn[standard]>=0.30.0,<1.0.0",
+    "sqlalchemy>=2.0.36,<3.0.0",
+    "pydantic-settings>=2.6.1,<3.0.0",
+    "jinja2>=3.1.6,<4.0.0",
+    "webauthn",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4,<9.0.0",
+    "httpx>=0.28.1,<1.0.0",
+    "ruff>=0.9.9,<1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "-q"
