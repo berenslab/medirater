@@ -302,6 +302,65 @@ def test_admin_ownership_enforced_and_superadmin_can_override(test_session_facto
         assert allowed_scope.status_code == 200
 
 
+def test_signup_token_scope_options_are_limited_by_role(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+
+        admin_a_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        ).json()["token"]
+        admin_b_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        ).json()["token"]
+
+        with TestClient(app) as admin_a_client:
+            _signup(admin_a_client, "author_a", token=admin_a_token)
+            created_a = admin_a_client.post(
+                "/api/admin/questionnaires",
+                json={"title": "Owner A", "description": None, "instructions_markdown": ""},
+            )
+            assert created_a.status_code == 200
+            questionnaire_a_id = created_a.json()["id"]
+            version_a_id = created_a.json()["latest_version_id"]
+            assert version_a_id
+            published_a = admin_a_client.post(
+                f"/api/admin/questionnaires/{questionnaire_a_id}/versions/{version_a_id}/publish"
+            )
+            assert published_a.status_code == 200
+
+        with TestClient(app) as admin_b_client:
+            _signup(admin_b_client, "author_b", token=admin_b_token)
+            created_b = admin_b_client.post(
+                "/api/admin/questionnaires",
+                json={"title": "Owner B", "description": None, "instructions_markdown": ""},
+            )
+            assert created_b.status_code == 200
+            questionnaire_b_id = created_b.json()["id"]
+            version_b_id = created_b.json()["latest_version_id"]
+            assert version_b_id
+            published_b = admin_b_client.post(
+                f"/api/admin/questionnaires/{questionnaire_b_id}/versions/{version_b_id}/publish"
+            )
+            assert published_b.status_code == 200
+
+            own_scope_options = admin_b_client.get("/api/admin/signup-token-scope-options")
+            assert own_scope_options.status_code == 200
+            own_items = own_scope_options.json()["items"]
+            assert len(own_items) == 1
+            assert own_items[0]["questionnaire_version_id"] == version_b_id
+            assert own_items[0]["questionnaire_owner_username"] == "author_b"
+
+        super_scope_options = super_client.get("/api/admin/signup-token-scope-options")
+        assert super_scope_options.status_code == 200
+        super_ids = {item["questionnaire_version_id"] for item in super_scope_options.json()["items"]}
+        assert version_a_id in super_ids
+        assert version_b_id in super_ids
+
+
 def test_delete_questionnaire_cascades_assets_and_answers(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 

@@ -23,6 +23,8 @@ from app.schemas import (
     CreateSignupTokenRequest,
     CreateSignupTokenResponse,
     SignupModeResponse,
+    SignupTokenScopeOption,
+    SignupTokenScopeOptionsResponse,
     SignupTokenListResponse,
     SignupTokenSummary,
     UpdateSignupModeRequest,
@@ -192,6 +194,37 @@ def list_signup_tokens(
         for record in records
     ]
     return SignupTokenListResponse(items=items)
+
+
+@router.get("/signup-token-scope-options", response_model=SignupTokenScopeOptionsResponse)
+def list_signup_token_scope_options(
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> SignupTokenScopeOptionsResponse:
+    stmt = (
+        select(QuestionnaireVersion, Questionnaire, User.username)
+        .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)
+        .join(User, User.id == Questionnaire.owner_admin_id)
+        .where(QuestionnaireVersion.status == QuestionnaireVersionStatus.PUBLISHED)
+        .order_by(asc(Questionnaire.title), asc(QuestionnaireVersion.version_number))
+    )
+    if current_user.role == Role.ADMIN:
+        stmt = stmt.where(Questionnaire.owner_admin_id == current_user.id)
+
+    rows = db.execute(stmt).all()
+    items = [
+        SignupTokenScopeOption(
+            questionnaire_id=questionnaire.id,
+            questionnaire_title=questionnaire.title,
+            questionnaire_slug=questionnaire.slug,
+            questionnaire_description=questionnaire.description,
+            questionnaire_owner_username=owner_username,
+            questionnaire_version_id=version.id,
+            questionnaire_version_number=version.version_number,
+        )
+        for version, questionnaire, owner_username in rows
+    ]
+    return SignupTokenScopeOptionsResponse(items=items)
 
 
 @router.get("/users", response_model=list[AdminManagedUserOut])

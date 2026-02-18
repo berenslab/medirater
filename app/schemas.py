@@ -105,6 +105,20 @@ class SignupTokenListResponse(BaseModel):
     items: list[SignupTokenSummary]
 
 
+class SignupTokenScopeOption(BaseModel):
+    questionnaire_id: str
+    questionnaire_title: str
+    questionnaire_slug: str
+    questionnaire_description: str | None
+    questionnaire_owner_username: str
+    questionnaire_version_id: str
+    questionnaire_version_number: int
+
+
+class SignupTokenScopeOptionsResponse(BaseModel):
+    items: list[SignupTokenScopeOption]
+
+
 class AdminManagedUserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

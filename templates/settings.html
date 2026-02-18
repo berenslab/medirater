@@ -118,6 +118,38 @@
       background: #fff;
       margin-top: 8px;
     }
+    .scope-list {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px;
+      max-height: 240px;
+      overflow: auto;
+      display: grid;
+      gap: 6px;
+    }
+    .scope-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      border: 1px solid #e5edf4;
+      border-radius: 8px;
+      padding: 8px;
+      background: #fbfdff;
+    }
+    .scope-option input {
+      width: auto;
+      margin-top: 2px;
+      flex: 0 0 auto;
+    }
+    .scope-option strong {
+      display: block;
+      font-size: 0.9rem;
+    }
+    .scope-option .muted {
+      font-size: 0.82rem;
+      margin-top: 2px;
+    }
     .muted { color: var(--muted); }
   </style>
 </head>
@@ -166,7 +198,7 @@
 
       <article class="card" id="invite-card" style="display:none;">
         <h2>Signup tokens and questionnaire visibility</h2>
-        <p>For user tokens, include published questionnaire version IDs.</p>
+        <p>For user tokens, select which published questionnaires the new user can access.</p>
 
         <div class="row">
           <div style="flex:1;min-width:180px;">
@@ -183,8 +215,9 @@
           </div>
         </div>
 
-        <label for="token-scope">Questionnaire version IDs (comma-separated)</label>
-        <input id="token-scope" placeholder="published-version-id-1,published-version-id-2" />
+        <label>Questionnaire visibility</label>
+        <div id="token-scope-options" class="scope-list"></div>
+        <div id="token-scope-hint" class="muted"></div>
 
         <div class="row">
           <button id="create-token-btn">Create token</button>
@@ -213,7 +246,10 @@
   </main>
 
   <script>
-    const state = { me: null };
+    const state = {
+      me: null,
+      tokenScopeOptions: [],
+    };
 
     function setStatus(id, message, ok) {
       const el = document.getElementById(id);
@@ -338,13 +374,64 @@
       }
     }
 
+    function getSelectedScopeVersionIds() {
+      return Array.from(document.querySelectorAll("input[name='token-scope-version']:checked"))
+        .map((input) => input.value)
+        .filter(Boolean);
+    }
+
+    function renderTokenScopeOptions(items) {
+      const wrap = document.getElementById("token-scope-options");
+      const previousSelection = new Set(getSelectedScopeVersionIds());
+      wrap.innerHTML = "";
+
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "No published questionnaires available.";
+        wrap.appendChild(empty);
+        return;
+      }
+
+      for (const item of items) {
+        const row = document.createElement("label");
+        row.className = "scope-option";
+        const checked = previousSelection.has(item.questionnaire_version_id) ? "checked" : "";
+        const ownerText = state.me?.role === "superadmin"
+          ? `Owner: ${item.questionnaire_owner_username}`
+          : `Published version: v${item.questionnaire_version_number}`;
+        row.innerHTML = `
+          <input type="checkbox" name="token-scope-version" value="${item.questionnaire_version_id}" ${checked} />
+          <div>
+            <strong>${item.questionnaire_title}</strong>
+            <div class="muted">v${item.questionnaire_version_number} | ${ownerText}</div>
+          </div>
+        `;
+        wrap.appendChild(row);
+      }
+    }
+
+    async function loadTokenScopeOptions() {
+      try {
+        const response = await requestJson("/api/admin/signup-token-scope-options");
+        state.tokenScopeOptions = response.items || [];
+        renderTokenScopeOptions(state.tokenScopeOptions);
+      } catch (error) {
+        state.tokenScopeOptions = [];
+        renderTokenScopeOptions([]);
+        setStatus("token-status", error.message || String(error), false);
+      }
+    }
+
     function syncTokenRole() {
       const role = document.getElementById("token-role").value;
-      const scope = document.getElementById("token-scope");
-      scope.disabled = role !== "user";
-      if (role !== "user") {
-        scope.value = "";
+      const isUserRole = role === "user";
+      for (const input of document.querySelectorAll("input[name='token-scope-version']")) {
+        input.disabled = !isUserRole;
       }
+      document.getElementById("token-scope-hint").textContent = isUserRole
+        ? "Select one or more questionnaires for this user token."
+        : "Questionnaire visibility applies only to user tokens.";
     }
 
     function renderTokenRows(items) {
@@ -414,6 +501,7 @@
         await loadMode();
       }
       if (state.me?.role === "admin" || state.me?.role === "superadmin") {
+        await loadTokenScopeOptions();
         syncTokenRole();
         await loadTokens();
       }
@@ -494,13 +582,10 @@
       try {
         const role = document.getElementById("token-role").value;
         const expires = Number(document.getElementById("token-expiry").value || 60);
-        const scope = document.getElementById("token-scope").value
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean);
+        const scope = role === "user" ? getSelectedScopeVersionIds() : [];
 
         if (role === "user" && scope.length === 0) {
-          throw new Error("User tokens require at least one questionnaire version ID.");
+          throw new Error("User tokens require at least one selected questionnaire.");
         }
 
         const created = await requestJson("/api/admin/signup-tokens", {
@@ -522,7 +607,11 @@
       }
     });
 
-    document.getElementById("refresh-tokens-btn").addEventListener("click", loadTokens);
+    document.getElementById("refresh-tokens-btn").addEventListener("click", async () => {
+      await loadTokenScopeOptions();
+      syncTokenRole();
+      await loadTokens();
+    });
 
     init();
   </script>
