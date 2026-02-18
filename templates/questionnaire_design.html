@@ -79,6 +79,30 @@
       border: 1px solid #d3e0ea;
       background: #edf4f9;
     }
+    details.manual-editor-panel > summary {
+      margin: 0 0 10px;
+      font-size: 1.08rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #0b2d45;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid #d3e0ea;
+      background: #edf4f9;
+      cursor: pointer;
+      list-style: none;
+    }
+    details.manual-editor-panel > summary::-webkit-details-marker {
+      display: none;
+    }
+    details.manual-editor-panel > summary::before {
+      content: "▸ ";
+      color: #3d5f79;
+      font-size: 0.95rem;
+    }
+    details.manual-editor-panel[open] > summary::before {
+      content: "▾ ";
+    }
     p { margin: 0 0 8px; }
     .muted { color: var(--muted); font-size: 0.9rem; }
 
@@ -343,59 +367,58 @@
         </article>
 
         <article class="card">
-          <h2>Manual question editor (existing questions only)</h2>
-          <p class="muted">Use this only to edit/delete generated questions.</p>
+          <details class="manual-editor-panel">
+            <summary>Edit single question manually</summary>
+            <p class="muted">Use this only to edit/delete generated questions.</p>
 
-          <div class="row">
-            <button id="refresh-questions-btn" class="secondary">Refresh questions</button>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Pos</th>
-                <th>Prompt</th>
-                <th>Type</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="questions-tbody"></tbody>
-          </table>
-
-          <label for="edit-prompt">Prompt</label>
-          <textarea id="edit-prompt"></textarea>
-
-          <label for="edit-choices">Choices (label|value per line)</label>
-          <textarea id="edit-choices"></textarea>
-
-          <div class="grid-2">
-            <div>
-              <label for="edit-type">Question type</label>
-              <select id="edit-type">
-                <option value="single_choice">single_choice</option>
-                <option value="multi_choice">multi_choice</option>
-                <option value="short_text">short_text</option>
-                <option value="long_text">long_text</option>
-              </select>
+            <div class="row">
+              <button id="refresh-questions-btn" class="secondary">Refresh questions</button>
             </div>
-            <div>
-              <label for="edit-required">Required</label>
-              <select id="edit-required">
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Pos</th>
+                  <th>Prompt</th>
+                  <th>Type</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="questions-tbody"></tbody>
+            </table>
+
+            <label for="edit-prompt">Prompt</label>
+            <textarea id="edit-prompt"></textarea>
+
+            <label for="edit-choices">Choices (label|value per line)</label>
+            <textarea id="edit-choices"></textarea>
+
+            <div class="grid-2">
+              <div>
+                <label for="edit-type">Question type</label>
+                <select id="edit-type">
+                  <option value="single_choice">single_choice</option>
+                  <option value="multi_choice">multi_choice</option>
+                  <option value="short_text">short_text</option>
+                  <option value="long_text">long_text</option>
+                </select>
+              </div>
+              <div>
+                <label for="edit-required">Required</label>
+                <select id="edit-required">
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              </div>
             </div>
-          </div>
 
-          <label for="edit-hide-seconds">Hide images after seconds (optional)</label>
-          <input id="edit-hide-seconds" type="number" min="0" step="1" placeholder="Blank or 0 = keep images visible" />
-
-          <div class="row">
-            <button id="save-edit-btn">Save selected question</button>
-            <button id="clear-selection-btn" class="ghost">Clear selection</button>
-          </div>
-          <div id="edit-status" class="status"></div>
-          <div id="selected-question-info" class="small">No question selected.</div>
+            <div class="row">
+              <button id="save-edit-btn">Save selected question</button>
+              <button id="clear-selection-btn" class="ghost">Clear selection</button>
+            </div>
+            <div id="edit-status" class="status"></div>
+            <div id="selected-question-info" class="small">No question selected.</div>
+          </details>
         </article>
       </section>
     </section>
@@ -599,11 +622,6 @@
           document.getElementById("edit-choices").value = choicesToText(question.choices || []);
           document.getElementById("edit-type").value = question.question_type;
           document.getElementById("edit-required").value = question.is_required ? "true" : "false";
-          const hideSecondsRaw = question?.config?.stimulus_hide_after_seconds;
-          const hideSeconds = Number.parseInt(String(hideSecondsRaw ?? ""), 10);
-          document.getElementById("edit-hide-seconds").value = Number.isFinite(hideSeconds) && hideSeconds > 0
-            ? String(hideSeconds)
-            : "";
           document.getElementById("selected-question-info").textContent = `Selected: position ${question.position}, id ${question.id}`;
           syncDraftControls();
         });
@@ -1127,7 +1145,6 @@
       document.getElementById("edit-choices").value = "";
       document.getElementById("edit-type").value = "single_choice";
       document.getElementById("edit-required").value = "true";
-      document.getElementById("edit-hide-seconds").value = "";
       syncDraftControls();
     });
 
@@ -1153,30 +1170,12 @@
         const questionType = document.getElementById("edit-type").value;
         const isRequired = document.getElementById("edit-required").value === "true";
         const choiceItems = parseChoices(document.getElementById("edit-choices").value);
-        const hideSecondsInput = document.getElementById("edit-hide-seconds").value.trim();
-        let hideSeconds = null;
-        if (hideSecondsInput) {
-          const parsed = Number.parseInt(hideSecondsInput, 10);
-          if (!Number.isFinite(parsed) || parsed < 0) {
-            throw new Error("Hide images after seconds must be a non-negative integer.");
-          }
-          if (parsed > 0) {
-            hideSeconds = parsed;
-          }
-        }
 
         if ((questionType === "single_choice" || questionType === "multi_choice") && choiceItems.length === 0) {
           throw new Error("Choice-based prompt requires choices.");
         }
         if ((questionType === "short_text" || questionType === "long_text") && choiceItems.length > 0) {
           throw new Error("Text prompt cannot include choices.");
-        }
-
-        const nextConfig = { ...(original.config || {}) };
-        if (hideSeconds === null) {
-          delete nextConfig.stimulus_hide_after_seconds;
-        } else {
-          nextConfig.stimulus_hide_after_seconds = hideSeconds;
         }
 
         await requestJson(
@@ -1189,7 +1188,7 @@
               prompt_text: promptText,
               question_type: questionType,
               is_required: isRequired,
-              config: nextConfig,
+              config: original.config || {},
               choices: choiceItems.map((item, index) => ({
                 position: index + 1,
                 label: item.label,
