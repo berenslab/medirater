@@ -196,6 +196,7 @@ class QuestionnaireCreateRequest(BaseModel):
     slug: str | None = Field(default=None, min_length=1, max_length=220)
     description: str | None = None
     instructions_markdown: str = ""
+    consent_text: str | None = None
 
 
 class QuestionnaireUpdateRequest(BaseModel):
@@ -206,10 +207,12 @@ class QuestionnaireUpdateRequest(BaseModel):
 
 class QuestionnaireVersionCreateRequest(BaseModel):
     instructions_markdown: str = ""
+    consent_text: str | None = None
 
 
 class QuestionnaireVersionUpdateRequest(BaseModel):
     instructions_markdown: str = ""
+    consent_text: str | None = None
 
 
 class QuestionnaireSummaryOut(BaseModel):
@@ -232,6 +235,7 @@ class QuestionnaireVersionSummaryOut(BaseModel):
     version_number: int
     status: QuestionnaireVersionStatus
     instructions_markdown: str
+    consent_text: str | None
     published_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -305,6 +309,7 @@ class QuestionnaireForAnswerOut(BaseModel):
     questionnaire_version_id: str
     title: str
     description: str | None
+    consent_text: str
     version_number: int
     instructions_markdown: str
     questions: list[QuestionOut]

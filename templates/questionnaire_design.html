@@ -220,21 +220,6 @@
       <section class="stack">
         <article class="card">
           <h2>Questionnaire + version</h2>
-          <label for="q-title">Title</label>
-          <input id="q-title" />
-
-          <label for="q-slug">Slug</label>
-          <input id="q-slug" />
-
-          <label for="q-description">Description</label>
-          <textarea id="q-description"></textarea>
-
-          <button id="save-q-btn">Save questionnaire</button>
-          <div class="row">
-            <button id="open-assignments-btn" class="secondary">Manage assignments</button>
-            <button id="open-responses-btn" class="secondary">View responses</button>
-          </div>
-
           <label for="version-select">Working version</label>
           <select id="version-select"></select>
 
@@ -244,9 +229,24 @@
             <button id="publish-btn" class="warn">Publish draft</button>
           </div>
 
+          <label for="q-title">Title</label>
+          <input id="q-title" />
+
+          <label for="q-slug">Slug</label>
+          <input id="q-slug" />
+
+          <label for="q-description">Description</label>
+          <textarea id="q-description"></textarea>
+
+          <button id="save-q-btn">Update metadata</button>
+
           <label for="instructions">Instructions (markdown)</label>
           <textarea id="instructions"></textarea>
-          <button id="save-instructions-btn">Save instructions</button>
+
+          <label for="consent-text">Consent text (optional)</label>
+          <textarea id="consent-text" placeholder="Leave blank to use the default consent text."></textarea>
+
+          <button id="save-instructions-btn">Save pre-start text</button>
 
           <div id="version-status" class="status"></div>
         </article>
@@ -686,6 +686,7 @@
       );
       state.versionDetail = detail;
       document.getElementById("instructions").value = detail.instructions_markdown || "";
+      document.getElementById("consent-text").value = detail.consent_text || "";
       renderQuestions();
       syncDraftControls();
       setStatus("version-status", `Loaded v${detail.version_number} (${detail.status}).`, "ok");
@@ -922,7 +923,11 @@
         await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, slug: slug || null, description: descriptionRaw || null }),
+          body: JSON.stringify({
+            title,
+            slug: slug || null,
+            description: descriptionRaw || null,
+          }),
         });
 
         setStatus("version-status", "Questionnaire saved.", "ok");
@@ -934,10 +939,14 @@
 
     document.getElementById("new-draft-btn").addEventListener("click", async () => {
       try {
+        const consentTextRaw = document.getElementById("consent-text").value.trim();
         const created = await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ instructions_markdown: document.getElementById("instructions").value }),
+          body: JSON.stringify({
+            instructions_markdown: document.getElementById("instructions").value,
+            consent_text: consentTextRaw || null,
+          }),
         });
         state.selectedVersionId = created.id;
         setStatus("version-status", `Created draft v${created.version_number}.`, "ok");
@@ -969,24 +978,20 @@
         if (!selectedVersionIsDraft()) {
           throw new Error("Only draft versions are editable.");
         }
+        const consentTextRaw = document.getElementById("consent-text").value.trim();
         await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ instructions_markdown: document.getElementById("instructions").value }),
+          body: JSON.stringify({
+            instructions_markdown: document.getElementById("instructions").value,
+            consent_text: consentTextRaw || null,
+          }),
         });
-        setStatus("version-status", "Instructions saved.", "ok");
+        setStatus("version-status", "Instructions and consent saved.", "ok");
         await loadVersionDetail();
       } catch (error) {
         setStatus("version-status", error.message || String(error), "err");
       }
-    });
-
-    document.getElementById("open-assignments-btn").addEventListener("click", () => {
-      window.location.assign(`/questionnaires/${QUESTIONNAIRE_ID}/assignments`);
-    });
-
-    document.getElementById("open-responses-btn").addEventListener("click", () => {
-      window.location.assign(`/questionnaires/${QUESTIONNAIRE_ID}/responses`);
     });
 
     document.getElementById("refresh-assets-btn").addEventListener("click", async () => {

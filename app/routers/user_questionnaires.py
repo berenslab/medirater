@@ -35,6 +35,7 @@ from app.schemas import (
     SubmitQuestionnaireRequest,
     SubmitQuestionnaireResponse,
 )
+from app.services.consent_service import resolve_effective_consent_text
 
 router = APIRouter(prefix="/api/user", tags=["user_questionnaires"])
 
@@ -309,6 +310,7 @@ def get_assigned_questionnaire_for_answer(
         questionnaire_version_id=version.id,
         title=questionnaire.title,
         description=questionnaire.description,
+        consent_text=resolve_effective_consent_text(version.consent_text),
         version_number=version.version_number,
         instructions_markdown=version.instructions_markdown,
         questions=[_to_question_out(question) for question in questions],

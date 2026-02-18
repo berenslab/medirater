@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.config import get_settings
 from app.main import app
 from app.models import Role
+from app.services.consent_service import DEFAULT_CONSENT_TEXT
 from app.services.token_service import issue_signup_token
 
 # 1x1 PNG
@@ -121,6 +122,7 @@ def test_user_can_open_assigned_questionnaire_and_submit_response(test_session_f
         assert detail.status_code == 200
         detail_json = detail.json()
         assert detail_json["title"] == "OCT Reader"
+        assert detail_json["consent_text"] == DEFAULT_CONSENT_TEXT
         assert len(detail_json["questions"]) == 1
         assert detail_json["existing_answers"] == []
 
@@ -187,3 +189,47 @@ def test_user_can_open_assigned_questionnaire_and_submit_response(test_session_f
         assert asset_content.status_code == 200
         assert asset_content.headers["content-type"].startswith("image/png")
         assert asset_content.content == PNG_BYTES
+
+
+def test_user_receives_custom_questionnaire_consent_text(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+    custom_consent = "Custom consent for this questionnaire."
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+
+        created = super_client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Custom Consent Questionnaire",
+                "description": "Evaluation",
+                "consent_text": custom_consent,
+                "instructions_markdown": "Read and answer.",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        published = super_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+        )
+        assert published.status_code == 200
+
+        user_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={
+                "role": "user",
+                "expires_in_minutes": 60,
+                "questionnaire_version_ids": [version_id],
+            },
+        )
+        assert user_token.status_code == 200
+
+    with TestClient(app) as user_client:
+        _signup(user_client, "alice", token=user_token.json()["token"])
+
+        detail = user_client.get(f"/api/user/questionnaires/{version_id}")
+        assert detail.status_code == 200
+        assert detail.json()["consent_text"] == custom_consent

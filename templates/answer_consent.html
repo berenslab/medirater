@@ -114,10 +114,7 @@
 
       <article class="card">
         <h2>Consent</h2>
-        <p>
-          I confirm I understand this evaluation, I agree to submit my responses for this questionnaire version,
-          and I understand my responses are stored for analysis.
-        </p>
+        <p id="consent-text"></p>
         <label class="consent-row">
           <input id="consent-check" type="checkbox" />
           <span>I consent to proceed with this questionnaire.</span>
@@ -135,6 +132,7 @@
 
   <script>
     const QUESTIONNAIRE_VERSION_ID = {{ questionnaire_version_id | tojson }};
+    const DEFAULT_CONSENT_TEXT = "I confirm I understand this evaluation, I agree to submit my responses for this questionnaire version, and I understand my responses are stored for analysis.";
     const state = { alreadyConsented: false };
 
     function setStatus(message, ok) {
@@ -161,6 +159,7 @@
       const detail = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}`);
       document.getElementById("headline").textContent = `${detail.title} v${detail.version_number}`;
       document.getElementById("instructions").textContent = detail.instructions_markdown || "No instructions.";
+      document.getElementById("consent-text").textContent = detail.consent_text || DEFAULT_CONSENT_TEXT;
 
       const consent = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/consent`);
       state.alreadyConsented = consent.consented === true;

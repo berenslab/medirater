@@ -211,6 +211,7 @@ class QuestionnaireVersion(Base):
         index=True,
     )
     instructions_markdown: Mapped[str] = mapped_column(Text, default="")
+    consent_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

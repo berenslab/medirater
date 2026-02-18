@@ -64,6 +64,31 @@ def ensure_runtime_schema(engine: Engine) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_questionnaires_slug_unique ON questionnaires (slug)"
         )
 
+        version_table_info = conn.exec_driver_sql("PRAGMA table_info(questionnaire_versions)").fetchall()
+        if version_table_info:
+            version_column_names = {row[1] for row in version_table_info}
+            if "consent_text" not in version_column_names:
+                conn.exec_driver_sql("ALTER TABLE questionnaire_versions ADD COLUMN consent_text TEXT")
+
+            # Backfill version consent text for instances that briefly stored it on questionnaires.
+            if "consent_text" in column_names:
+                conn.exec_driver_sql(
+                    """
+                    UPDATE questionnaire_versions
+                    SET consent_text = (
+                        SELECT questionnaires.consent_text
+                        FROM questionnaires
+                        WHERE questionnaires.id = questionnaire_versions.questionnaire_id
+                    )
+                    WHERE (consent_text IS NULL OR trim(consent_text) = '')
+                      AND questionnaire_id IN (
+                        SELECT id
+                        FROM questionnaires
+                        WHERE consent_text IS NOT NULL AND trim(consent_text) != ''
+                    )
+                    """
+                )
+
         assets_table_info = conn.exec_driver_sql("PRAGMA table_info(assets)").fetchall()
         if assets_table_info:
             asset_column_names = {row[1] for row in assets_table_info}

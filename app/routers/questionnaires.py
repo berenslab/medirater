@@ -54,6 +54,7 @@ from app.schemas import (
 )
 from app.security import normalize_username
 from app.services.bulk_recipe_service import GroupedCase, group_assets_for_recipe
+from app.services.consent_service import normalize_optional_consent_text
 
 router = APIRouter(prefix="/api/admin/questionnaires", tags=["questionnaires"])
 
@@ -153,6 +154,7 @@ def _to_version_summary_out(version: QuestionnaireVersion) -> QuestionnaireVersi
         version_number=version.version_number,
         status=version.status,
         instructions_markdown=version.instructions_markdown,
+        consent_text=version.consent_text,
         published_at=version.published_at,
         created_at=version.created_at,
         updated_at=version.updated_at,
@@ -496,6 +498,7 @@ def create_questionnaire(
         version_number=1,
         status=QuestionnaireVersionStatus.DRAFT,
         instructions_markdown=payload.instructions_markdown,
+        consent_text=normalize_optional_consent_text(payload.consent_text),
         created_by_id=current_user.id,
     )
     db.add(version)
@@ -875,6 +878,11 @@ def create_questionnaire_version(
             if payload.instructions_markdown
             else (source_version.instructions_markdown if source_version else "")
         ),
+        consent_text=(
+            normalize_optional_consent_text(payload.consent_text)
+            if "consent_text" in payload.model_fields_set
+            else (source_version.consent_text if source_version else None)
+        ),
         created_by_id=current_user.id,
     )
     db.add(draft)
@@ -956,6 +964,8 @@ def update_questionnaire_version(
     version = _get_version_for_questionnaire(db, questionnaire_id=questionnaire_id, version_id=version_id)
     _ensure_draft(version)
     version.instructions_markdown = payload.instructions_markdown
+    if "consent_text" in payload.model_fields_set:
+        version.consent_text = normalize_optional_consent_text(payload.consent_text)
     version.updated_at = utcnow()
     db.commit()
     db.refresh(version)

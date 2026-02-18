@@ -178,6 +178,60 @@ def test_admin_questionnaire_lifecycle_and_draft_clone(test_session_factory) -> 
         assert v2_questions[0]["choices"][0]["value"] == "normal"
 
 
+def test_admin_can_set_and_clear_version_consent_text(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+
+        admin_token_resp = super_client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        )
+        assert admin_token_resp.status_code == 200
+        admin_token = admin_token_resp.json()["token"]
+
+    with TestClient(app) as admin_client:
+        _signup(admin_client, "designer", token=admin_token)
+
+        custom_consent = "Custom consent text."
+        created = admin_client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Consent Text Questionnaire",
+                "description": "First draft",
+                "consent_text": custom_consent,
+                "instructions_markdown": "",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        version_detail = admin_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}"
+        )
+        assert version_detail.status_code == 200
+        assert version_detail.json()["consent_text"] == custom_consent
+
+        cleared = admin_client.patch(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}",
+            json={
+                "instructions_markdown": "",
+                "consent_text": "  ",
+            },
+        )
+        assert cleared.status_code == 200
+        assert cleared.json()["consent_text"] is None
+
+        version_detail_after = admin_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}"
+        )
+        assert version_detail_after.status_code == 200
+        assert version_detail_after.json()["consent_text"] is None
+
+
 def test_admin_ownership_enforced_and_superadmin_can_override(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 
