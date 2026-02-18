@@ -1,8 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="google" content="notranslate" />
+  <meta http-equiv="Content-Language" content="en" />
   <title>Questionnaire Design</title>
   <style>
     :root {
@@ -26,7 +28,7 @@
       padding: 20px;
     }
     .container {
-      max-width: 1160px;
+      max-width: 1220px;
       margin: 0 auto;
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -46,11 +48,16 @@
     .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
     nav { display: flex; gap: 10px; }
     nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
-    .content {
+
+    .layout {
       display: grid;
-      grid-template-columns: 360px 1fr;
+      grid-template-columns: 340px 1fr;
       gap: 12px;
       padding: 14px;
+    }
+    .stack {
+      display: grid;
+      gap: 12px;
     }
     .card {
       border: 1px solid var(--border);
@@ -58,7 +65,11 @@
       background: #fcfdff;
       padding: 12px;
     }
-    h2 { margin: 0 0 10px; font-size: 1rem; }
+
+    h2 { margin: 0 0 8px; font-size: 1rem; }
+    p { margin: 0 0 8px; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+
     label {
       display: block;
       margin: 8px 0 4px;
@@ -76,6 +87,7 @@
       background: #fff;
     }
     textarea { min-height: 84px; resize: vertical; }
+
     button {
       border: 0;
       border-radius: 8px;
@@ -86,17 +98,53 @@
       margin-top: 8px;
     }
     button.secondary { background: #4d5f70; }
-    button.warn { background: #9a6700; }
+    button.warn {
+      background: #9a6700;
+      color: #fff;
+      border: 1px solid #734b00;
+      font-weight: 600;
+    }
+    button.ghost {
+      background: #e8eef3;
+      color: #1a2b3a;
+    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
     .row {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
       align-items: center;
     }
-    .status { margin-top: 8px; min-height: 18px; font-size: 0.9rem; }
-    .ok { color: var(--ok); }
-    .err { color: var(--err); }
-    .warn { color: var(--warn); }
+    .grid-2 {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .status {
+      margin-top: 8px;
+      min-height: 18px;
+      font-size: 0.9rem;
+    }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+    .status.warn { color: var(--warn); }
+
+    .dropzone {
+      border: 2px dashed #9cb8cb;
+      border-radius: 10px;
+      background: #f6fbff;
+      padding: 12px;
+      text-align: center;
+      color: #38546b;
+      cursor: pointer;
+    }
+    .dropzone.dragover {
+      border-color: var(--accent);
+      background: #e9f4f9;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -110,9 +158,21 @@
       vertical-align: top;
       word-break: break-word;
     }
-    .muted { color: var(--muted); }
-    @media (max-width: 960px) {
-      .content { grid-template-columns: 1fr; }
+
+    .scroll {
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px;
+    }
+
+    .small { font-size: 0.84rem; color: var(--muted); }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .grid-2 { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -130,83 +190,189 @@
       </nav>
     </section>
 
-    <section class="content">
-      <article class="card">
-        <h2>Questionnaire and version</h2>
+    <section class="layout">
+      <aside class="stack">
+        <article class="card">
+          <h2>Questionnaire + version</h2>
+          <label for="q-title">Title</label>
+          <input id="q-title" />
 
-        <label for="q-title">Title</label>
-        <input id="q-title" />
+          <label for="q-description">Description</label>
+          <textarea id="q-description"></textarea>
 
-        <label for="q-description">Description</label>
-        <textarea id="q-description"></textarea>
+          <button id="save-q-btn">Save questionnaire</button>
 
-        <button id="save-q-btn">Save questionnaire</button>
+          <label for="version-select">Working version</label>
+          <select id="version-select"></select>
 
-        <label for="version-select">Working version</label>
-        <select id="version-select"></select>
+          <div class="row">
+            <button id="load-version-btn" class="secondary">Load version</button>
+            <button id="new-draft-btn" class="secondary">Create new draft</button>
+            <button id="publish-btn" class="warn">Publish draft</button>
+          </div>
 
-        <div class="row">
-          <button id="load-version-btn" class="secondary">Load version</button>
-          <button id="new-draft-btn" class="secondary">Create new draft</button>
-          <button id="publish-btn" class="warn">Publish draft</button>
-        </div>
+          <label for="instructions">Instructions (markdown)</label>
+          <textarea id="instructions"></textarea>
+          <button id="save-instructions-btn">Save instructions</button>
 
-        <label for="instructions">Instructions (markdown)</label>
-        <textarea id="instructions"></textarea>
-        <button id="save-instructions-btn">Save instructions</button>
+          <div id="version-status" class="status"></div>
+        </article>
 
-        <div id="version-status" class="status"></div>
-      </article>
+        <article class="card">
+          <h2>Bulk dataset preset</h2>
+          <p class="muted">V1 default is OCT Task1-like triplets (`1a/1b/1c`).</p>
 
-      <article class="card">
-        <h2>Questions in selected draft</h2>
-        <p class="muted">Design is done after questionnaire creation, version by version.</p>
+          <label for="dataset-preset">Preset</label>
+          <select id="dataset-preset">
+            <option value="oct_task1_triplet">OCT Task1 (triplet by suffix a/b/c)</option>
+          </select>
 
-        <div class="row">
-          <button id="refresh-questions-btn" class="secondary">Refresh questions</button>
-        </div>
+          <label for="replace-existing">Replace existing questions when apply</label>
+          <select id="replace-existing">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
 
-        <label for="position">Position</label>
-        <input id="position" type="number" min="1" value="1" />
+          <div class="small">Manual mode is for editing existing prompts only. New prompts should come from bulk import.</div>
+        </article>
+      </aside>
 
-        <label for="prompt">Prompt</label>
-        <textarea id="prompt"></textarea>
+      <section class="stack">
+        <article class="card">
+          <h2>Bulk upload and generate (default)</h2>
+          <p class="muted">Upload images, select assets, then generate prompts in bulk.</p>
 
-        <label for="type">Type</label>
-        <select id="type">
-          <option value="single_choice">single_choice</option>
-          <option value="multi_choice">multi_choice</option>
-          <option value="short_text">short_text</option>
-          <option value="long_text">long_text</option>
-        </select>
+          <div id="dropzone" class="dropzone">
+            Drag files/folders here
+            <div class="small">Click to select files. Shift+click to select a folder.</div>
+          </div>
 
-        <label for="required">Required</label>
-        <select id="required">
-          <option value="true">true</option>
-          <option value="false">false</option>
-        </select>
+          <input id="picker-files" type="file" multiple style="display:none;" />
+          <input id="picker-folder" type="file" webkitdirectory directory multiple style="display:none;" />
 
-        <label for="config">Config JSON</label>
-        <textarea id="config">{}</textarea>
+          <div class="row">
+            <button id="upload-btn">Upload staged files</button>
+            <button id="clear-staged-btn" class="ghost">Clear staged</button>
+            <button id="refresh-assets-btn" class="secondary">Refresh assets</button>
+            <button id="select-uploaded-btn" class="ghost">Select just-uploaded</button>
+          </div>
+          <div id="upload-status" class="status"></div>
+          <div id="staged-info" class="small"></div>
 
-        <label for="choices">Choices (label|value per line)</label>
-        <textarea id="choices" placeholder="Normal|normal&#10;Abnormal|abnormal"></textarea>
+          <div class="scroll" style="margin-top:8px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Use</th>
+                  <th>Name</th>
+                  <th>Original path</th>
+                </tr>
+              </thead>
+              <tbody id="assets-tbody"></tbody>
+            </table>
+          </div>
 
-        <button id="add-question-btn">Add question</button>
-        <div id="question-status" class="status"></div>
+          <label for="bulk-prompt">Prompt template</label>
+          <textarea id="bulk-prompt">Question {case_index}/{case_total}: Which image was generated by AI?</textarea>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Pos</th>
-              <th>Prompt</th>
-              <th>Type</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="questions-tbody"></tbody>
-        </table>
-      </article>
+          <label for="bulk-choices">Choices (label|value per line)</label>
+          <textarea id="bulk-choices">a|a
+b|b
+c|c</textarea>
+
+          <div class="grid-2">
+            <div>
+              <label for="bulk-type">Question type</label>
+              <select id="bulk-type">
+                <option value="single_choice">single_choice</option>
+                <option value="multi_choice">multi_choice</option>
+                <option value="short_text">short_text</option>
+                <option value="long_text">long_text</option>
+              </select>
+            </div>
+            <div>
+              <label for="bulk-required">Required</label>
+              <select id="bulk-required">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <button id="preview-btn">Preview bulk generation</button>
+            <button id="apply-btn">Apply bulk generation</button>
+          </div>
+          <div id="bulk-status" class="status"></div>
+          <div id="bulk-warnings" class="status"></div>
+
+          <div class="scroll" style="margin-top:8px;max-height:260px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Case</th>
+                  <th>Stimulus count</th>
+                  <th>Generated prompt</th>
+                </tr>
+              </thead>
+              <tbody id="preview-tbody"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>Manual question editor (existing questions only)</h2>
+          <p class="muted">Use this only to edit/delete generated questions.</p>
+
+          <div class="row">
+            <button id="refresh-questions-btn" class="secondary">Refresh questions</button>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Pos</th>
+                <th>Prompt</th>
+                <th>Type</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="questions-tbody"></tbody>
+          </table>
+
+          <label for="edit-prompt">Prompt</label>
+          <textarea id="edit-prompt"></textarea>
+
+          <label for="edit-choices">Choices (label|value per line)</label>
+          <textarea id="edit-choices"></textarea>
+
+          <div class="grid-2">
+            <div>
+              <label for="edit-type">Question type</label>
+              <select id="edit-type">
+                <option value="single_choice">single_choice</option>
+                <option value="multi_choice">multi_choice</option>
+                <option value="short_text">short_text</option>
+                <option value="long_text">long_text</option>
+              </select>
+            </div>
+            <div>
+              <label for="edit-required">Required</label>
+              <select id="edit-required">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <button id="save-edit-btn">Save selected question</button>
+            <button id="clear-selection-btn" class="ghost">Clear selection</button>
+          </div>
+          <div id="edit-status" class="status"></div>
+          <div id="selected-question-info" class="small">No question selected.</div>
+        </article>
+      </section>
     </section>
   </main>
 
@@ -214,13 +380,18 @@
     const QUESTIONNAIRE_ID = {{ questionnaire_id | tojson }};
 
     const state = {
-      me: null,
       questionnaire: null,
       selectedVersionId: null,
       versionDetail: null,
+      stagedFiles: [],
+      assets: [],
+      selectedAssetIds: new Set(),
+      latestUploadedIds: [],
+      previewCases: [],
+      selectedQuestionId: null,
     };
 
-    function setStatus(id, message, mode) {
+    function setStatus(id, message, mode = "ok") {
       const el = document.getElementById(id);
       el.className = `status ${mode}`;
       el.textContent = message || "";
@@ -240,44 +411,40 @@
       return data;
     }
 
-    function parseJson(raw, label) {
-      try {
-        return JSON.parse(raw);
-      } catch (_error) {
-        throw new Error(`${label} must be valid JSON.`);
-      }
-    }
-
     function parseChoices(raw) {
       const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
       return lines.map((line, index) => {
-        const parts = line.split("|");
-        const label = (parts[0] || "").trim();
-        const value = (parts[1] || parts[0] || "").trim();
+        const [labelPart, valuePart] = line.includes("|") ? line.split("|") : [line, line];
+        const label = (labelPart || "").trim();
+        const value = (valuePart || "").trim();
         if (!label || !value) {
-          throw new Error(`Invalid choice line ${index + 1}.`);
+          throw new Error(`Invalid choice at line ${index + 1}. Use label|value.`);
         }
-        return { position: index + 1, label, value };
+        return { label, value };
       });
     }
 
-    function selectedVersion() {
-      if (!state.questionnaire) return null;
-      return (state.questionnaire.versions || []).find((item) => item.id === state.selectedVersionId) || null;
+    function choicesToText(choices) {
+      return (choices || []).map((item) => `${item.label}|${item.value}`).join("\n");
+    }
+
+    function selectedVersionMeta() {
+      return (state.questionnaire?.versions || []).find((item) => item.id === state.selectedVersionId) || null;
     }
 
     function selectedVersionIsDraft() {
-      const version = selectedVersion();
-      return Boolean(version && version.status === "draft");
+      return selectedVersionMeta()?.status === "draft";
     }
 
     function syncDraftControls() {
       const isDraft = selectedVersionIsDraft();
-      document.getElementById("save-instructions-btn").disabled = !isDraft;
-      document.getElementById("add-question-btn").disabled = !isDraft;
       document.getElementById("publish-btn").disabled = !isDraft;
+      document.getElementById("save-instructions-btn").disabled = !isDraft;
+      document.getElementById("preview-btn").disabled = !isDraft;
+      document.getElementById("apply-btn").disabled = !isDraft;
+      document.getElementById("save-edit-btn").disabled = !isDraft || !state.selectedQuestionId;
       if (!isDraft) {
-        setStatus("version-status", "Selected version is not draft. Edit actions disabled.", "warn");
+        setStatus("version-status", "Selected version is not draft. Edit/import actions disabled.", "warn");
       }
     }
 
@@ -285,7 +452,6 @@
       const select = document.getElementById("version-select");
       select.innerHTML = "";
       const versions = [...(state.questionnaire?.versions || [])].sort((a, b) => b.version_number - a.version_number);
-
       if (!versions.length) {
         const option = document.createElement("option");
         option.value = "";
@@ -294,16 +460,16 @@
         return;
       }
 
+      if (!state.selectedVersionId) {
+        const draft = versions.find((item) => item.status === "draft");
+        state.selectedVersionId = (draft || versions[0]).id;
+      }
+
       for (const version of versions) {
         const option = document.createElement("option");
         option.value = version.id;
         option.textContent = `v${version.version_number} (${version.status})`;
         select.appendChild(option);
-      }
-
-      if (!state.selectedVersionId) {
-        const draft = versions.find((item) => item.status === "draft");
-        state.selectedVersionId = (draft || versions[0]).id;
       }
       select.value = state.selectedVersionId;
     }
@@ -311,23 +477,43 @@
     function renderQuestions() {
       const tbody = document.getElementById("questions-tbody");
       tbody.innerHTML = "";
+
       const questions = state.versionDetail?.questions || [];
       if (!questions.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="4" class="muted">No questions yet.</td>';
+        tr.innerHTML = '<td colspan="4" class="muted">No questions in this version.</td>';
         tbody.appendChild(tr);
         return;
       }
 
-      for (const item of questions) {
+      for (const q of questions) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${item.position}</td>
-          <td>${item.prompt_text}</td>
-          <td>${item.question_type}</td>
-          <td><button type="button" data-delete-id="${item.id}">Delete</button></td>
+          <td>${q.position}</td>
+          <td>${q.prompt_text}</td>
+          <td>${q.question_type}</td>
+          <td>
+            <button type="button" data-edit-id="${q.id}">Edit</button>
+            <button type="button" class="ghost" data-delete-id="${q.id}">Delete</button>
+          </td>
         `;
         tbody.appendChild(tr);
+      }
+
+      for (const btn of document.querySelectorAll("[data-edit-id]")) {
+        btn.addEventListener("click", (event) => {
+          const questionId = event.currentTarget.getAttribute("data-edit-id");
+          const question = (state.versionDetail?.questions || []).find((item) => item.id === questionId);
+          if (!question) return;
+
+          state.selectedQuestionId = question.id;
+          document.getElementById("edit-prompt").value = question.prompt_text || "";
+          document.getElementById("edit-choices").value = choicesToText(question.choices || []);
+          document.getElementById("edit-type").value = question.question_type;
+          document.getElementById("edit-required").value = question.is_required ? "true" : "false";
+          document.getElementById("selected-question-info").textContent = `Selected: position ${question.position}, id ${question.id}`;
+          syncDraftControls();
+        });
       }
 
       for (const btn of document.querySelectorAll("[data-delete-id]")) {
@@ -341,12 +527,84 @@
               `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/questions/${questionId}`,
               { method: "DELETE" },
             );
-            setStatus("question-status", "Question deleted.", "ok");
+            setStatus("edit-status", "Question deleted.", "ok");
+            if (state.selectedQuestionId === questionId) {
+              state.selectedQuestionId = null;
+              document.getElementById("selected-question-info").textContent = "No question selected.";
+            }
             await loadVersionDetail();
           } catch (error) {
-            setStatus("question-status", error.message || String(error), "err");
+            setStatus("edit-status", error.message || String(error), "err");
           }
         });
+      }
+    }
+
+    function renderAssets() {
+      const tbody = document.getElementById("assets-tbody");
+      tbody.innerHTML = "";
+      if (!state.assets.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="3" class="muted">No assets uploaded.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+
+      for (const asset of state.assets) {
+        const checked = state.selectedAssetIds.has(asset.id) ? "checked" : "";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="checkbox" data-asset-id="${asset.id}" ${checked}></td>
+          <td>${asset.file_name}</td>
+          <td>${asset.original_path || "-"}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      for (const cb of document.querySelectorAll("[data-asset-id]")) {
+        cb.addEventListener("change", (event) => {
+          const assetId = event.currentTarget.getAttribute("data-asset-id");
+          if (!assetId) return;
+          if (event.currentTarget.checked) {
+            state.selectedAssetIds.add(assetId);
+          } else {
+            state.selectedAssetIds.delete(assetId);
+          }
+        });
+      }
+    }
+
+    function renderStagedInfo() {
+      const el = document.getElementById("staged-info");
+      if (!state.stagedFiles.length) {
+        el.textContent = "No staged files.";
+        return;
+      }
+      const sample = state.stagedFiles.slice(0, 4).map((item) => item.relativePath).join(", ");
+      const suffix = state.stagedFiles.length > 4 ? ` (+${state.stagedFiles.length - 4} more)` : "";
+      el.textContent = `Staged ${state.stagedFiles.length} files: ${sample}${suffix}`;
+    }
+
+    function renderPreview() {
+      const tbody = document.getElementById("preview-tbody");
+      tbody.innerHTML = "";
+
+      if (!state.previewCases.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="3" class="muted">No preview yet.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+
+      for (const item of state.previewCases) {
+        const prompt = item.questions && item.questions[0] ? item.questions[0].prompt_text : "-";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${item.case_key}</td>
+          <td>${(item.stimulus_asset_ids || []).length}</td>
+          <td>${prompt}</td>
+        `;
+        tbody.appendChild(tr);
       }
     }
 
@@ -366,33 +624,155 @@
         renderQuestions();
         return;
       }
+
       const detail = await requestJson(
         `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}`,
       );
       state.versionDetail = detail;
       document.getElementById("instructions").value = detail.instructions_markdown || "";
-      const nextPosition = Math.max(0, ...(detail.questions || []).map((item) => item.position)) + 1;
-      document.getElementById("position").value = String(nextPosition);
       renderQuestions();
       syncDraftControls();
       setStatus("version-status", `Loaded v${detail.version_number} (${detail.status}).`, "ok");
     }
 
-    async function init() {
-      try {
-        const me = await requestJson("/api/auth/me");
-        state.me = me;
-        document.getElementById("headline").textContent = `Loading questionnaire for ${me.username} (${me.role})...`;
-      } catch (_error) {
-        // keep loading detail path
+    async function loadAssets() {
+      const items = await requestJson("/api/admin/assets?limit=500");
+      state.assets = items || [];
+      const valid = new Set(state.assets.map((item) => item.id));
+      for (const id of Array.from(state.selectedAssetIds)) {
+        if (!valid.has(id)) state.selectedAssetIds.delete(id);
+      }
+      renderAssets();
+    }
+
+    function stageFiles(files) {
+      for (const file of files) {
+        if (!file || !file.size) continue;
+        const relativePath = file.webkitRelativePath && file.webkitRelativePath.trim()
+          ? file.webkitRelativePath.trim().replaceAll("\\", "/")
+          : file.name;
+        state.stagedFiles.push({ file, relativePath });
+      }
+      renderStagedInfo();
+      setStatus("upload-status", `Staged ${state.stagedFiles.length} files.`, "ok");
+    }
+
+    function setupDropzone() {
+      const dz = document.getElementById("dropzone");
+      const filesPicker = document.getElementById("picker-files");
+      const folderPicker = document.getElementById("picker-folder");
+
+      dz.setAttribute("tabindex", "0");
+
+      function openPicker(useFolderPicker) {
+        if (useFolderPicker) {
+          folderPicker.click();
+        } else {
+          filesPicker.click();
+        }
       }
 
+      dz.addEventListener("click", (event) => {
+        openPicker(Boolean(event.shiftKey));
+      });
+      dz.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openPicker(Boolean(event.shiftKey));
+        }
+      });
+
+      dz.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        dz.classList.add("dragover");
+      });
+      dz.addEventListener("dragleave", () => {
+        dz.classList.remove("dragover");
+      });
+      dz.addEventListener("drop", (event) => {
+        event.preventDefault();
+        dz.classList.remove("dragover");
+        stageFiles(Array.from(event.dataTransfer?.files || []));
+      });
+
+      filesPicker.addEventListener("change", (event) => {
+        stageFiles(Array.from(event.currentTarget.files || []));
+        event.currentTarget.value = "";
+      });
+      folderPicker.addEventListener("change", (event) => {
+        stageFiles(Array.from(event.currentTarget.files || []));
+        event.currentTarget.value = "";
+      });
+    }
+
+    function getRecipeConfigForPreset() {
+      const preset = document.getElementById("dataset-preset").value;
+      if (preset === "oct_task1_triplet") {
+        return {
+          recipe_type: "triplet_by_suffix",
+          recipe_config: { suffixes: ["a", "b", "c"], strict: true },
+        };
+      }
+      return {
+        recipe_type: "triplet_by_suffix",
+        recipe_config: { suffixes: ["a", "b", "c"], strict: true },
+      };
+    }
+
+    function buildBulkPayload() {
+      if (!selectedVersionIsDraft()) {
+        throw new Error("Only draft versions are editable.");
+      }
+      const assetIds = Array.from(state.selectedAssetIds);
+      if (!assetIds.length) {
+        throw new Error("Select at least one uploaded asset.");
+      }
+
+      const promptTemplate = document.getElementById("bulk-prompt").value.trim();
+      if (!promptTemplate) {
+        throw new Error("Prompt template is required.");
+      }
+
+      const questionType = document.getElementById("bulk-type").value;
+      const isRequired = document.getElementById("bulk-required").value === "true";
+      const parsedChoices = parseChoices(document.getElementById("bulk-choices").value);
+
+      if ((questionType === "single_choice" || questionType === "multi_choice") && parsedChoices.length === 0) {
+        throw new Error("Choice-based prompt requires choices.");
+      }
+      if ((questionType === "short_text" || questionType === "long_text") && parsedChoices.length > 0) {
+        throw new Error("Text prompt cannot include choices.");
+      }
+
+      const recipe = getRecipeConfigForPreset();
+      return {
+        recipe_type: recipe.recipe_type,
+        asset_ids: assetIds,
+        recipe_config: recipe.recipe_config,
+        question_templates: [
+          {
+            prompt_template: promptTemplate,
+            question_type: questionType,
+            is_required: isRequired,
+            choices: parsedChoices,
+            config: {},
+          },
+        ],
+      };
+    }
+
+    async function init() {
       try {
         await loadQuestionnaire();
         await loadVersionDetail();
+        await loadAssets();
       } catch (error) {
         setStatus("version-status", error.message || String(error), "err");
       }
+
+      renderStagedInfo();
+      renderPreview();
+      setupDropzone();
     }
 
     document.getElementById("version-select").addEventListener("change", (event) => {
@@ -411,9 +791,7 @@
     document.getElementById("save-q-btn").addEventListener("click", async () => {
       try {
         const title = document.getElementById("q-title").value.trim();
-        if (!title) {
-          throw new Error("Title is required.");
-        }
+        if (!title) throw new Error("Title is required.");
         const descriptionRaw = document.getElementById("q-description").value.trim();
 
         await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}`, {
@@ -421,6 +799,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title, description: descriptionRaw || null }),
         });
+
         setStatus("version-status", "Questionnaire saved.", "ok");
         await loadQuestionnaire();
       } catch (error) {
@@ -436,6 +815,23 @@
           body: JSON.stringify({ instructions_markdown: document.getElementById("instructions").value }),
         });
         state.selectedVersionId = created.id;
+        setStatus("version-status", `Created draft v${created.version_number}.`, "ok");
+        await loadQuestionnaire();
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("version-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("publish-btn").addEventListener("click", async () => {
+      try {
+        if (!selectedVersionIsDraft()) {
+          throw new Error("Only draft versions can be published.");
+        }
+        await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/publish`, {
+          method: "POST",
+        });
+        setStatus("version-status", "Draft published.", "ok");
         await loadQuestionnaire();
         await loadVersionDetail();
       } catch (error) {
@@ -460,19 +856,119 @@
       }
     });
 
-    document.getElementById("publish-btn").addEventListener("click", async () => {
+    document.getElementById("clear-staged-btn").addEventListener("click", () => {
+      state.stagedFiles = [];
+      renderStagedInfo();
+      setStatus("upload-status", "Cleared staged files.", "ok");
+    });
+
+    document.getElementById("upload-btn").addEventListener("click", async () => {
       try {
-        if (!selectedVersionIsDraft()) {
-          throw new Error("Only draft versions can be published.");
+        if (!state.stagedFiles.length) {
+          throw new Error("No staged files to upload.");
         }
-        await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/publish`, {
+
+        const form = new FormData();
+        for (const item of state.stagedFiles) {
+          form.append("files", item.file, item.relativePath || item.file.name);
+          form.append("paths", item.relativePath || item.file.name);
+        }
+
+        const response = await fetch("/api/admin/assets/upload", {
           method: "POST",
+          credentials: "include",
+          body: form,
         });
-        setStatus("version-status", "Draft published.", "ok");
-        await loadQuestionnaire();
+
+        let payload = [];
+        try {
+          payload = await response.json();
+        } catch (_error) {
+          payload = [];
+        }
+
+        if (!response.ok) {
+          throw new Error(payload.detail || `Upload failed (${response.status})`);
+        }
+
+        state.latestUploadedIds = (payload || []).map((item) => item.id);
+        state.selectedAssetIds = new Set(state.latestUploadedIds);
+        state.stagedFiles = [];
+        renderStagedInfo();
+        setStatus("upload-status", `Uploaded ${state.latestUploadedIds.length} files.`, "ok");
+        await loadAssets();
+      } catch (error) {
+        setStatus("upload-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("refresh-assets-btn").addEventListener("click", async () => {
+      try {
+        await loadAssets();
+        setStatus("upload-status", `Loaded ${state.assets.length} assets.`, "ok");
+      } catch (error) {
+        setStatus("upload-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("select-uploaded-btn").addEventListener("click", () => {
+      state.selectedAssetIds = new Set(state.latestUploadedIds);
+      renderAssets();
+      setStatus("upload-status", `Selected ${state.latestUploadedIds.length} just-uploaded assets.`, "ok");
+    });
+
+    document.getElementById("preview-btn").addEventListener("click", async () => {
+      try {
+        const payload = buildBulkPayload();
+        const preview = await requestJson(
+          `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/bulk-recipes/preview`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+
+        state.previewCases = preview.cases || [];
+        renderPreview();
+        setStatus("bulk-status", `Preview generated ${state.previewCases.length} cases.`, "ok");
+        setStatus(
+          "bulk-warnings",
+          (preview.warnings || []).length ? `Warnings: ${(preview.warnings || []).join(" | ")}` : "No warnings.",
+          (preview.warnings || []).length ? "warn" : "ok",
+        );
+      } catch (error) {
+        setStatus("bulk-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("apply-btn").addEventListener("click", async () => {
+      try {
+        const payload = buildBulkPayload();
+        payload.replace_existing_questions = document.getElementById("replace-existing").value === "true";
+
+        const applied = await requestJson(
+          `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/bulk-recipes/apply`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+
+        setStatus(
+          "bulk-status",
+          `Applied: ${applied.created_questions} questions across ${applied.cases} cases.`,
+          "ok",
+        );
+        setStatus(
+          "bulk-warnings",
+          (applied.warnings || []).length ? `Warnings: ${(applied.warnings || []).join(" | ")}` : "No warnings.",
+          (applied.warnings || []).length ? "warn" : "ok",
+        );
         await loadVersionDetail();
       } catch (error) {
-        setStatus("version-status", error.message || String(error), "err");
+        setStatus("bulk-status", error.message || String(error), "err");
       }
     });
 
@@ -480,50 +976,74 @@
       try {
         await loadVersionDetail();
       } catch (error) {
-        setStatus("question-status", error.message || String(error), "err");
+        setStatus("edit-status", error.message || String(error), "err");
       }
     });
 
-    document.getElementById("add-question-btn").addEventListener("click", async () => {
+    document.getElementById("clear-selection-btn").addEventListener("click", () => {
+      state.selectedQuestionId = null;
+      document.getElementById("selected-question-info").textContent = "No question selected.";
+      document.getElementById("edit-prompt").value = "";
+      document.getElementById("edit-choices").value = "";
+      document.getElementById("edit-type").value = "single_choice";
+      document.getElementById("edit-required").value = "true";
+      syncDraftControls();
+    });
+
+    document.getElementById("save-edit-btn").addEventListener("click", async () => {
       try {
         if (!selectedVersionIsDraft()) {
           throw new Error("Only draft versions are editable.");
         }
-        const position = Number(document.getElementById("position").value);
-        if (!Number.isInteger(position) || position < 1) {
-          throw new Error("Position must be a positive integer.");
+        if (!state.selectedQuestionId) {
+          throw new Error("Select a question to edit first.");
         }
-        const prompt = document.getElementById("prompt").value.trim();
-        if (!prompt) {
+
+        const original = (state.versionDetail?.questions || []).find((item) => item.id === state.selectedQuestionId);
+        if (!original) {
+          throw new Error("Selected question is no longer available.");
+        }
+
+        const promptText = document.getElementById("edit-prompt").value.trim();
+        if (!promptText) {
           throw new Error("Prompt is required.");
         }
 
-        const questionType = document.getElementById("type").value;
-        const isRequired = document.getElementById("required").value === "true";
-        const config = parseJson(document.getElementById("config").value, "Config");
-        const choicesRaw = document.getElementById("choices").value;
-        const choices = parseChoices(choicesRaw);
+        const questionType = document.getElementById("edit-type").value;
+        const isRequired = document.getElementById("edit-required").value === "true";
+        const choiceItems = parseChoices(document.getElementById("edit-choices").value);
 
-        await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/questions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            position,
-            prompt_text: prompt,
-            question_type: questionType,
-            is_required: isRequired,
-            config,
-            choices,
-          }),
-        });
+        if ((questionType === "single_choice" || questionType === "multi_choice") && choiceItems.length === 0) {
+          throw new Error("Choice-based prompt requires choices.");
+        }
+        if ((questionType === "short_text" || questionType === "long_text") && choiceItems.length > 0) {
+          throw new Error("Text prompt cannot include choices.");
+        }
 
-        setStatus("question-status", "Question created.", "ok");
-        document.getElementById("prompt").value = "";
-        document.getElementById("config").value = "{}";
-        document.getElementById("choices").value = "";
+        await requestJson(
+          `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/questions/${state.selectedQuestionId}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              position: original.position,
+              prompt_text: promptText,
+              question_type: questionType,
+              is_required: isRequired,
+              config: original.config || {},
+              choices: choiceItems.map((item, index) => ({
+                position: index + 1,
+                label: item.label,
+                value: item.value,
+              })),
+            }),
+          },
+        );
+
+        setStatus("edit-status", "Question updated.", "ok");
         await loadVersionDetail();
       } catch (error) {
-        setStatus("question-status", error.message || String(error), "err");
+        setStatus("edit-status", error.message || String(error), "err");
       }
     });
 

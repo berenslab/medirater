@@ -67,7 +67,8 @@ uv run uvicorn app.main:app --reload
 4. As admin or superadmin, go to `/questionnaires`:
 - create/select questionnaire
 - open dedicated questionnaire design page
-- edit draft instructions and questions
+- use bulk upload/import as the default question creation flow
+- manually edit/delete existing generated questions when needed
 - publish draft version
 5. Go to `/settings` for:
 - passkey management
