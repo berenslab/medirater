@@ -368,7 +368,7 @@
 
         <article class="card">
           <details class="manual-editor-panel">
-            <summary>Edit single question manually</summary>
+            <summary>Edit existing questions</summary>
             <p class="muted">Use this only to edit/delete generated questions.</p>
 
             <div class="row">
@@ -414,6 +414,7 @@
 
             <div class="row">
               <button id="save-edit-btn">Save selected question</button>
+              <button id="save-edit-bulk-btn" class="secondary">Apply to same slot in all cases</button>
               <button id="clear-selection-btn" class="ghost">Clear selection</button>
             </div>
             <div id="edit-status" class="status"></div>
@@ -554,6 +555,7 @@
       document.getElementById("preview-btn").disabled = !isDraft;
       document.getElementById("apply-btn").disabled = !isDraft;
       document.getElementById("save-edit-btn").disabled = !isDraft || !state.selectedQuestionId;
+      document.getElementById("save-edit-bulk-btn").disabled = !isDraft || !state.selectedQuestionId;
       if (!isDraft) {
         setStatus("version-status", "Selected version is not draft. Edit/import actions disabled.", "warn");
       }
@@ -622,7 +624,7 @@
           document.getElementById("edit-choices").value = choicesToText(question.choices || []);
           document.getElementById("edit-type").value = question.question_type;
           document.getElementById("edit-required").value = question.is_required ? "true" : "false";
-          document.getElementById("selected-question-info").textContent = `Selected: position ${question.position}, id ${question.id}`;
+          document.getElementById("selected-question-info").textContent = `Selected position ${question.position}.`;
           syncDraftControls();
         });
       }
@@ -1148,6 +1150,41 @@
       syncDraftControls();
     });
 
+    function readManualEditValues() {
+      const promptText = document.getElementById("edit-prompt").value.trim();
+      if (!promptText) {
+        throw new Error("Prompt is required.");
+      }
+
+      const questionType = document.getElementById("edit-type").value;
+      const isRequired = document.getElementById("edit-required").value === "true";
+      const choiceItems = parseChoices(document.getElementById("edit-choices").value);
+
+      if ((questionType === "single_choice" || questionType === "multi_choice") && choiceItems.length === 0) {
+        throw new Error("Choice-based prompt requires choices.");
+      }
+      if ((questionType === "short_text" || questionType === "long_text") && choiceItems.length > 0) {
+        throw new Error("Text prompt cannot include choices.");
+      }
+
+      return { promptText, questionType, isRequired, choiceItems };
+    }
+
+    function buildQuestionUpdatePayload(original, editValues) {
+      return {
+        position: original.position,
+        prompt_text: editValues.promptText,
+        question_type: editValues.questionType,
+        is_required: editValues.isRequired,
+        config: original.config || {},
+        choices: editValues.choiceItems.map((item, index) => ({
+          position: index + 1,
+          label: item.label,
+          value: item.value,
+        })),
+      };
+    }
+
     document.getElementById("save-edit-btn").addEventListener("click", async () => {
       try {
         if (!selectedVersionIsDraft()) {
@@ -1162,43 +1199,95 @@
           throw new Error("Selected question is no longer available.");
         }
 
-        const promptText = document.getElementById("edit-prompt").value.trim();
-        if (!promptText) {
-          throw new Error("Prompt is required.");
-        }
-
-        const questionType = document.getElementById("edit-type").value;
-        const isRequired = document.getElementById("edit-required").value === "true";
-        const choiceItems = parseChoices(document.getElementById("edit-choices").value);
-
-        if ((questionType === "single_choice" || questionType === "multi_choice") && choiceItems.length === 0) {
-          throw new Error("Choice-based prompt requires choices.");
-        }
-        if ((questionType === "short_text" || questionType === "long_text") && choiceItems.length > 0) {
-          throw new Error("Text prompt cannot include choices.");
-        }
-
+        const editValues = readManualEditValues();
         await requestJson(
           `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/questions/${state.selectedQuestionId}`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              position: original.position,
-              prompt_text: promptText,
-              question_type: questionType,
-              is_required: isRequired,
-              config: original.config || {},
-              choices: choiceItems.map((item, index) => ({
-                position: index + 1,
-                label: item.label,
-                value: item.value,
-              })),
-            }),
+            body: JSON.stringify(buildQuestionUpdatePayload(original, editValues)),
           },
         );
 
         setStatus("edit-status", "Question updated.", "ok");
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("edit-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("save-edit-bulk-btn").addEventListener("click", async () => {
+      try {
+        if (!selectedVersionIsDraft()) {
+          throw new Error("Only draft versions are editable.");
+        }
+        if (!state.selectedQuestionId) {
+          throw new Error("Select a question to edit first.");
+        }
+
+        const allQuestions = state.versionDetail?.questions || [];
+        const selected = allQuestions.find((item) => item.id === state.selectedQuestionId);
+        if (!selected) {
+          throw new Error("Selected question is no longer available.");
+        }
+        const selectedCaseKey = selected.config?.case_key;
+        if (!selectedCaseKey) {
+          throw new Error("Selected question is not case-based. Use single question update instead.");
+        }
+
+        const byCaseKey = new Map();
+        for (const question of allQuestions) {
+          const caseKey = question.config?.case_key;
+          if (!caseKey) continue;
+          if (!byCaseKey.has(caseKey)) {
+            byCaseKey.set(caseKey, []);
+          }
+          byCaseKey.get(caseKey).push(question);
+        }
+        if (!byCaseKey.size) {
+          throw new Error("No case-based questions found in this version.");
+        }
+        for (const questions of byCaseKey.values()) {
+          questions.sort((a, b) => a.position - b.position);
+        }
+
+        const selectedCaseQuestions = byCaseKey.get(selectedCaseKey) || [];
+        const selectedSlotIndex = selectedCaseQuestions.findIndex((item) => item.id === selected.id);
+        if (selectedSlotIndex < 0) {
+          throw new Error("Could not determine selected question slot.");
+        }
+
+        const targets = [];
+        let skippedCases = 0;
+        for (const questions of byCaseKey.values()) {
+          if (selectedSlotIndex >= questions.length) {
+            skippedCases += 1;
+            continue;
+          }
+          targets.push(questions[selectedSlotIndex]);
+        }
+        if (!targets.length) {
+          throw new Error("No matching questions found for this slot.");
+        }
+
+        const editValues = readManualEditValues();
+        for (const target of targets) {
+          await requestJson(
+            `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/questions/${target.id}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(buildQuestionUpdatePayload(target, editValues)),
+            },
+          );
+        }
+
+        const skipText = skippedCases ? ` ${skippedCases} case(s) were skipped (missing this slot).` : "";
+        setStatus(
+          "edit-status",
+          `Updated slot ${selectedSlotIndex + 1} across ${targets.length} case(s).${skipText}`,
+          "ok",
+        );
         await loadVersionDetail();
       } catch (error) {
         setStatus("edit-status", error.message || String(error), "err");
