@@ -51,22 +51,34 @@
 
     .layout {
       display: grid;
-      grid-template-columns: 340px 1fr;
-      gap: 12px;
+      grid-template-columns: 1fr;
+      gap: 18px;
       padding: 14px;
     }
     .stack {
       display: grid;
-      gap: 12px;
+      gap: 18px;
     }
     .card {
-      border: 1px solid var(--border);
+      border: 1px solid #c7d6e3;
+      border-left: 5px solid var(--accent);
       border-radius: 10px;
       background: #fcfdff;
-      padding: 12px;
+      padding: 14px;
+      box-shadow: 0 1px 0 rgba(15, 34, 53, 0.04);
     }
 
-    h2 { margin: 0 0 8px; font-size: 1rem; }
+    .card > h2 {
+      margin: 0 0 10px;
+      font-size: 1.08rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #0b2d45;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid #d3e0ea;
+      background: #edf4f9;
+    }
     p { margin: 0 0 8px; }
     .muted { color: var(--muted); font-size: 0.9rem; }
 
@@ -185,7 +197,6 @@
     }
 
     @media (max-width: 980px) {
-      .layout { grid-template-columns: 1fr; }
       .grid-2 { grid-template-columns: 1fr; }
     }
   </style>
@@ -206,7 +217,7 @@
     </section>
 
     <section class="layout">
-      <aside class="stack">
+      <section class="stack">
         <article class="card">
           <h2>Questionnaire + version</h2>
           <label for="q-title">Title</label>
@@ -260,7 +271,7 @@
 
           <div class="small">Manual mode is for editing existing prompts only. New prompts should come from bulk import.</div>
         </article>
-      </aside>
+      </section>
 
       <section class="stack">
         <article class="card">
