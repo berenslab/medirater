@@ -220,6 +220,7 @@
       answersByQuestionId: new Map(),
       caseGroups: [],
       currentCaseIndex: 0,
+      stimulusHideTimerId: null,
     };
 
     function setStatus(message, ok) {
@@ -566,6 +567,28 @@
       return ids;
     }
 
+    function clearStimulusHideTimer() {
+      if (state.stimulusHideTimerId !== null) {
+        window.clearTimeout(state.stimulusHideTimerId);
+        state.stimulusHideTimerId = null;
+      }
+    }
+
+    function getCaseStimulusHideSeconds(caseGroup) {
+      let minSeconds = null;
+      for (const question of caseGroup.questions || []) {
+        const rawValue = question?.config?.stimulus_hide_after_seconds;
+        const parsed = Number.parseInt(String(rawValue ?? ""), 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          continue;
+        }
+        if (minSeconds === null || parsed < minSeconds) {
+          minSeconds = parsed;
+        }
+      }
+      return minSeconds;
+    }
+
     function loadDraftFromStorage() {
       try {
         const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
@@ -756,6 +779,7 @@
       const cases = state.caseGroups || [];
       const total = cases.length;
       const currentCase = cases[state.currentCaseIndex];
+      clearStimulusHideTimer();
 
       document.getElementById("headline").textContent = `${state.detail.title} v${state.detail.version_number}`;
       document.getElementById("instructions").innerHTML = renderMarkdownToHtml(
@@ -785,6 +809,23 @@
           strip.appendChild(img);
         }
         root.appendChild(strip);
+
+        const hideAfterSeconds = getCaseStimulusHideSeconds(currentCase);
+        if (hideAfterSeconds !== null) {
+          const hideNote = document.createElement("div");
+          hideNote.className = "muted";
+          hideNote.style.margin = "6px 0 0";
+          hideNote.textContent = `Images will be hidden after ${hideAfterSeconds} seconds.`;
+          root.appendChild(hideNote);
+
+          state.stimulusHideTimerId = window.setTimeout(() => {
+            for (const img of strip.querySelectorAll("img")) {
+              img.style.visibility = "hidden";
+            }
+            hideNote.textContent = "Images are hidden.";
+            state.stimulusHideTimerId = null;
+          }, hideAfterSeconds * 1000);
+        }
       }
 
       for (const question of currentCase.questions) {

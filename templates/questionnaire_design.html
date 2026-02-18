@@ -270,6 +270,15 @@
             <option value="true">true</option>
           </select>
 
+          <label for="stimulus-hide-seconds">Hide images after seconds (optional)</label>
+          <input
+            id="stimulus-hide-seconds"
+            type="number"
+            min="0"
+            step="1"
+            placeholder="Blank or 0 = keep images visible"
+          />
+
           <div class="small">Manual mode is for editing existing prompts only. New prompts should come from bulk import.</div>
         </article>
       </section>
@@ -377,6 +386,9 @@
               </select>
             </div>
           </div>
+
+          <label for="edit-hide-seconds">Hide images after seconds (optional)</label>
+          <input id="edit-hide-seconds" type="number" min="0" step="1" placeholder="Blank or 0 = keep images visible" />
 
           <div class="row">
             <button id="save-edit-btn">Save selected question</button>
@@ -587,6 +599,11 @@
           document.getElementById("edit-choices").value = choicesToText(question.choices || []);
           document.getElementById("edit-type").value = question.question_type;
           document.getElementById("edit-required").value = question.is_required ? "true" : "false";
+          const hideSecondsRaw = question?.config?.stimulus_hide_after_seconds;
+          const hideSeconds = Number.parseInt(String(hideSecondsRaw ?? ""), 10);
+          document.getElementById("edit-hide-seconds").value = Number.isFinite(hideSeconds) && hideSeconds > 0
+            ? String(hideSeconds)
+            : "";
           document.getElementById("selected-question-info").textContent = `Selected: position ${question.position}, id ${question.id}`;
           syncDraftControls();
         });
@@ -846,6 +863,18 @@
         throw new Error("Add at least one question template.");
       }
 
+      const hideSecondsInput = document.getElementById("stimulus-hide-seconds").value.trim();
+      let hideSeconds = null;
+      if (hideSecondsInput) {
+        const parsed = Number.parseInt(hideSecondsInput, 10);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          throw new Error("Hide images after seconds must be a non-negative integer.");
+        }
+        if (parsed > 0) {
+          hideSeconds = parsed;
+        }
+      }
+
       const questionTemplates = templateCards.map((card, index) => {
         const promptTemplate = card.querySelector("[data-field='prompt']")?.value.trim() || "";
         if (!promptTemplate) {
@@ -868,7 +897,7 @@
           question_type: questionType,
           is_required: isRequired,
           choices: parsedChoices,
-          config: {},
+          config: hideSeconds === null ? {} : { stimulus_hide_after_seconds: hideSeconds },
         };
       });
 
@@ -1098,6 +1127,7 @@
       document.getElementById("edit-choices").value = "";
       document.getElementById("edit-type").value = "single_choice";
       document.getElementById("edit-required").value = "true";
+      document.getElementById("edit-hide-seconds").value = "";
       syncDraftControls();
     });
 
@@ -1123,12 +1153,30 @@
         const questionType = document.getElementById("edit-type").value;
         const isRequired = document.getElementById("edit-required").value === "true";
         const choiceItems = parseChoices(document.getElementById("edit-choices").value);
+        const hideSecondsInput = document.getElementById("edit-hide-seconds").value.trim();
+        let hideSeconds = null;
+        if (hideSecondsInput) {
+          const parsed = Number.parseInt(hideSecondsInput, 10);
+          if (!Number.isFinite(parsed) || parsed < 0) {
+            throw new Error("Hide images after seconds must be a non-negative integer.");
+          }
+          if (parsed > 0) {
+            hideSeconds = parsed;
+          }
+        }
 
         if ((questionType === "single_choice" || questionType === "multi_choice") && choiceItems.length === 0) {
           throw new Error("Choice-based prompt requires choices.");
         }
         if ((questionType === "short_text" || questionType === "long_text") && choiceItems.length > 0) {
           throw new Error("Text prompt cannot include choices.");
+        }
+
+        const nextConfig = { ...(original.config || {}) };
+        if (hideSeconds === null) {
+          delete nextConfig.stimulus_hide_after_seconds;
+        } else {
+          nextConfig.stimulus_hide_after_seconds = hideSeconds;
         }
 
         await requestJson(
@@ -1141,7 +1189,7 @@
               prompt_text: promptText,
               question_type: questionType,
               is_required: isRequired,
-              config: original.config || {},
+              config: nextConfig,
               choices: choiceItems.map((item, index) => ({
                 position: index + 1,
                 label: item.label,
