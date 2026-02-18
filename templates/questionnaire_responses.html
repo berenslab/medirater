@@ -338,7 +338,7 @@
         const items = await requestJson(url);
         state.responses = items || [];
         renderResponses();
-        setStatus("list-status", `Loaded ${state.responses.length} responses.`, true);
+        setStatus("list-status", "", true);
       } catch (error) {
         state.responses = [];
         renderResponses();
@@ -369,7 +369,7 @@
         );
         state.selectedResponseId = responseId;
         renderResponseDetail(detail);
-        setStatus("detail-status", "Response detail loaded.", true);
+        setStatus("detail-status", "", true);
       } catch (error) {
         setStatus("detail-status", error.message || String(error), false);
       }

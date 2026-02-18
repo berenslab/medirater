@@ -166,7 +166,7 @@
       try {
         const items = await requestJson("/api/user/assigned-questionnaires");
         renderRows(items || []);
-        setStatus(`Loaded ${items.length} assigned questionnaires.`, true);
+        setStatus("", true);
       } catch (error) {
         renderRows([]);
         setStatus(error.message || String(error), false);

@@ -329,7 +329,7 @@
         const items = await requestJson(`/api/admin/assignments?${query.toString()}`);
         state.assignments = items || [];
         renderAssignments();
-        setStatus("list-status", `Loaded ${state.assignments.length} assignments.`, true);
+        setStatus("list-status", "", true);
       } catch (error) {
         state.assignments = [];
         renderAssignments();
