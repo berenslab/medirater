@@ -1,7 +1,7 @@
+import json
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
-import json
 
 from sqlalchemy import (
     Boolean,
@@ -9,6 +9,7 @@ from sqlalchemy import (
     Enum as SAEnum,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -31,6 +32,19 @@ class Role(str, Enum):
 class SignupMode(str, Enum):
     OPEN = "open"
     INVITE_ONLY = "invite_only"
+
+
+class QuestionnaireVersionStatus(str, Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class QuestionType(str, Enum):
+    SINGLE_CHOICE = "single_choice"
+    MULTI_CHOICE = "multi_choice"
+    SHORT_TEXT = "short_text"
+    LONG_TEXT = "long_text"
 
 
 class User(Base):
@@ -150,4 +164,110 @@ class UserAssignment(Base):
     questionnaire_version_id: Mapped[str] = mapped_column(String(36), index=True)
     granted_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Questionnaire(Base):
+    __tablename__ = "questionnaires"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_admin_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    versions: Mapped[list["QuestionnaireVersion"]] = relationship(
+        back_populates="questionnaire",
+        cascade="all, delete-orphan",
+    )
+
+
+class QuestionnaireVersion(Base):
+    __tablename__ = "questionnaire_versions"
+    __table_args__ = (
+        UniqueConstraint("questionnaire_id", "version_number", name="uq_questionnaire_version_number"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    questionnaire_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("questionnaires.id", ondelete="CASCADE"), index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer)
+    status: Mapped[QuestionnaireVersionStatus] = mapped_column(
+        SAEnum(QuestionnaireVersionStatus, name="questionnaire_version_status_enum"),
+        default=QuestionnaireVersionStatus.DRAFT,
+        index=True,
+    )
+    instructions_markdown: Mapped[str] = mapped_column(Text, default="")
+    created_by_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    questionnaire: Mapped[Questionnaire] = relationship(back_populates="versions")
+    questions: Mapped[list["Question"]] = relationship(
+        back_populates="questionnaire_version",
+        cascade="all, delete-orphan",
+    )
+
+
+class Question(Base):
+    __tablename__ = "questions"
+    __table_args__ = (
+        UniqueConstraint("questionnaire_version_id", "position", name="uq_question_position"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    questionnaire_version_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("questionnaire_versions.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    prompt_text: Mapped[str] = mapped_column(Text)
+    question_type: Mapped[QuestionType] = mapped_column(
+        SAEnum(QuestionType, name="question_type_enum"),
+        default=QuestionType.SINGLE_CHOICE,
+    )
+    is_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    config_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    questionnaire_version: Mapped[QuestionnaireVersion] = relationship(back_populates="questions")
+    choices: Mapped[list["Choice"]] = relationship(back_populates="question", cascade="all, delete-orphan")
+
+
+class Choice(Base):
+    __tablename__ = "choices"
+    __table_args__ = (
+        UniqueConstraint("question_id", "position", name="uq_choice_position"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    question_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("questions.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    label: Mapped[str] = mapped_column(Text)
+    value: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    question: Mapped[Question] = relationship(back_populates="choices")
+
+
+class Asset(Base):
+    __tablename__ = "assets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    file_name: Mapped[str] = mapped_column(String(255))
+    original_path: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
+    mime_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sha256_hex: Mapped[str] = mapped_column(String(64), index=True)
+    blob_data: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

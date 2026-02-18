@@ -30,6 +30,24 @@ def _signup(client: TestClient, username: str, token: str | None = None) -> dict
     return complete.json()
 
 
+def _create_published_questionnaire_version(client: TestClient, title: str) -> str:
+    created = client.post(
+        "/api/admin/questionnaires",
+        json={"title": title, "description": "desc", "instructions_markdown": "hello"},
+    )
+    assert created.status_code == 200
+    questionnaire = created.json()
+    questionnaire_id = questionnaire["id"]
+    version_id = questionnaire["latest_version_id"]
+    assert version_id is not None
+
+    published = client.post(
+        f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+    )
+    assert published.status_code == 200
+    return version_id
+
+
 def test_open_signup_and_login_flow() -> None:
     with TestClient(app) as client:
         signup = _signup(client, "alice")
@@ -84,16 +102,18 @@ def test_invite_only_mode_blocks_public_signup_without_token_and_user_invite_req
         )
         assert token_resp.status_code == 400
 
+        version_id = _create_published_questionnaire_version(client, "Initial published questionnaire")
+
         scoped_token_resp = client.post(
             "/api/admin/signup-tokens",
             json={
                 "role": "user",
                 "expires_in_minutes": 60,
-                "questionnaire_version_ids": ["qv-001", "qv-002"],
+                "questionnaire_version_ids": [version_id],
             },
         )
         assert scoped_token_resp.status_code == 200
-        assert scoped_token_resp.json()["questionnaire_version_ids"] == ["qv-001", "qv-002"]
+        assert scoped_token_resp.json()["questionnaire_version_ids"] == [version_id]
 
         _signup(client, "bob", token=scoped_token_resp.json()["token"])
 
@@ -109,7 +129,7 @@ def test_invite_only_mode_blocks_public_signup_without_token_and_user_invite_req
             .scalars()
             .all()
         )
-        assert assignments == ["qv-001", "qv-002"]
+        assert assignments == [version_id]
 
 
 def test_admin_can_only_create_user_tokens(test_session_factory) -> None:
@@ -142,6 +162,8 @@ def test_admin_can_only_create_user_tokens(test_session_factory) -> None:
         )
         assert forbidden.status_code == 403
 
+        version_id = _create_published_questionnaire_version(client, "Admin-owned questionnaire")
+
         missing_scope = client.post(
             "/api/admin/signup-tokens",
             json={"role": "user", "expires_in_minutes": 60},
@@ -153,8 +175,8 @@ def test_admin_can_only_create_user_tokens(test_session_factory) -> None:
             json={
                 "role": "user",
                 "expires_in_minutes": 60,
-                "questionnaire_version_ids": ["qv-admin-owned-1"],
+                "questionnaire_version_ids": [version_id],
             },
         )
         assert ok.status_code == 200
-        assert ok.json()["questionnaire_version_ids"] == ["qv-admin-owned-1"]
+        assert ok.json()["questionnaire_version_ids"] == [version_id]

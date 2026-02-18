@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.deps import get_admin_user, get_superadmin_user
-from app.models import Role, SignupToken, User
+from app.models import Questionnaire, QuestionnaireVersion, QuestionnaireVersionStatus, Role, SignupToken, User
 from app.schemas import (
     CreateSignupTokenRequest,
     CreateSignupTokenResponse,
@@ -15,7 +15,11 @@ from app.schemas import (
     UpdateSignupModeRequest,
 )
 from app.services.settings_service import get_public_signup_mode, set_public_signup_mode
-from app.services.token_service import deserialize_visibility_scope, issue_signup_token
+from app.services.token_service import (
+    deserialize_visibility_scope,
+    issue_signup_token,
+    normalize_visibility_scope,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -46,32 +50,72 @@ def create_signup_token(
     settings: Settings = Depends(get_settings),
 ) -> CreateSignupTokenResponse:
     is_superadmin = current_user.role == Role.SUPERADMIN
+    normalized_scope = normalize_visibility_scope(payload.questionnaire_version_ids)
+
     if not is_superadmin and payload.role != Role.USER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admins can only create user signup tokens",
         )
 
-    if payload.role == Role.USER and not payload.questionnaire_version_ids:
+    if payload.role == Role.USER and not normalized_scope:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User signup tokens must include questionnaire visibility scope",
         )
 
-    if payload.role != Role.USER and payload.questionnaire_version_ids:
+    if payload.role != Role.USER and normalized_scope:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Questionnaire visibility scope is only valid for user signup tokens",
         )
 
-    # TODO: Enforce questionnaire ownership for admin issuers once questionnaire tables are added.
+    if payload.role == Role.USER:
+        rows = db.execute(
+            select(QuestionnaireVersion, Questionnaire.owner_admin_id)
+            .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)
+            .where(QuestionnaireVersion.id.in_(normalized_scope))
+        ).all()
+        versions_by_id = {version.id: (version, owner_admin_id) for version, owner_admin_id in rows}
+
+        missing_ids = [item for item in normalized_scope if item not in versions_by_id]
+        if missing_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown questionnaire version ids: {', '.join(missing_ids)}",
+            )
+
+        non_published = [
+            item
+            for item in normalized_scope
+            if versions_by_id[item][0].status != QuestionnaireVersionStatus.PUBLISHED
+        ]
+        if non_published:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Only published questionnaire versions can be assigned: {', '.join(non_published)}",
+            )
+
+        if not is_superadmin:
+            forbidden_ids = [
+                item for item in normalized_scope if versions_by_id[item][1] != current_user.id
+            ]
+            if forbidden_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Admins can only assign questionnaire versions from their own questionnaires. "
+                        f"Forbidden ids: {', '.join(forbidden_ids)}"
+                    ),
+                )
+
     token_record, token = issue_signup_token(
         db,
         role=payload.role,
         created_by_id=current_user.id,
         expires_in_minutes=payload.expires_in_minutes,
         token_pepper=settings.token_pepper,
-        questionnaire_version_ids=payload.questionnaire_version_ids,
+        questionnaire_version_ids=normalized_scope,
     )
     db.commit()
     db.refresh(token_record)
