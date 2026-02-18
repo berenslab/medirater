@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -7,6 +7,8 @@ from app.db import get_db
 from app.deps import get_admin_user, get_superadmin_user
 from app.models import Questionnaire, QuestionnaireVersion, QuestionnaireVersionStatus, Role, SignupToken, User
 from app.schemas import (
+    AdminManagedUserOut,
+    AdminUpdateUserRequest,
     CreateSignupTokenRequest,
     CreateSignupTokenResponse,
     SignupModeResponse,
@@ -22,6 +24,10 @@ from app.services.token_service import (
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+def _to_admin_managed_user_out(user: User) -> AdminManagedUserOut:
+    return AdminManagedUserOut.model_validate(user)
 
 
 @router.get("/settings/public-signup-mode", response_model=SignupModeResponse)
@@ -152,3 +158,65 @@ def list_signup_tokens(
         for record in records
     ]
     return SignupTokenListResponse(items=items)
+
+
+@router.get("/users", response_model=list[AdminManagedUserOut])
+def list_users_for_superadmin(
+    _: User = Depends(get_superadmin_user),
+    db: Session = Depends(get_db),
+) -> list[AdminManagedUserOut]:
+    users = db.execute(select(User).order_by(desc(User.created_at)).limit(500)).scalars().all()
+    return [_to_admin_managed_user_out(user) for user in users]
+
+
+@router.patch("/users/{user_id}", response_model=AdminManagedUserOut)
+def update_user_for_superadmin(
+    user_id: str,
+    payload: AdminUpdateUserRequest,
+    current_user: User = Depends(get_superadmin_user),
+    db: Session = Depends(get_db),
+) -> AdminManagedUserOut:
+    if payload.role is None and payload.is_active is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one field (role or is_active) must be provided",
+        )
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if user.id == current_user.id:
+        if payload.role and payload.role != Role.SUPERADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot change your own role from superadmin",
+            )
+        if payload.is_active is False:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot deactivate your own account",
+            )
+
+    next_role = payload.role if payload.role is not None else user.role
+    next_is_active = payload.is_active if payload.is_active is not None else user.is_active
+    if user.role == Role.SUPERADMIN and (
+        next_role != Role.SUPERADMIN or not next_is_active
+    ):
+        superadmin_count = db.scalar(
+            select(func.count(User.id)).where(User.role == Role.SUPERADMIN).where(User.is_active.is_(True))
+        )
+        if (superadmin_count or 0) <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot remove or deactivate the last active superadmin",
+            )
+
+    if payload.role is not None:
+        user.role = payload.role
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+
+    db.commit()
+    db.refresh(user)
+    return _to_admin_managed_user_out(user)

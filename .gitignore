@@ -2,5 +2,6 @@ AGENTS.md
 
 *cache
 .venv
+.env
 app.db
 docs/

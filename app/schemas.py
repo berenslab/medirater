@@ -106,6 +106,21 @@ class SignupTokenListResponse(BaseModel):
     items: list[SignupTokenSummary]
 
 
+class AdminManagedUserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    username: str
+    role: Role
+    is_active: bool
+    created_at: datetime
+
+
+class AdminUpdateUserRequest(BaseModel):
+    role: Role | None = None
+    is_active: bool | None = None
+
+
 class ChoiceCreate(BaseModel):
     position: int = Field(ge=1)
     label: str = Field(min_length=1, max_length=500)
@@ -276,6 +291,11 @@ class BulkRecipePreviewResponse(BaseModel):
 
 
 class BulkRecipeApplyRequest(BulkRecipePreviewRequest):
+    replace_existing_questions: bool = False
+
+
+class BulkRecipeApplyPreviewRequest(BaseModel):
+    cases: list[BulkRecipeCasePreview] = Field(min_length=1)
     replace_existing_questions: bool = False
 
 

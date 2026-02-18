@@ -241,7 +241,7 @@
         });
 
         setStatus("Signup successful. Redirecting...", true);
-        window.setTimeout(() => { window.location.href = "/me"; }, 500);
+        window.setTimeout(() => { window.location.href = "/"; }, 500);
       } catch (error) {
         setStatus(error.message || String(error), false);
       } finally {

@@ -22,6 +22,7 @@ from app.models import (
 from app.schemas import (
     BulkGeneratedQuestionPreview,
     BulkRecipeApplyRequest,
+    BulkRecipeApplyPreviewRequest,
     BulkRecipeApplyResponse,
     BulkRecipeCasePreview,
     BulkRecipePreviewRequest,
@@ -190,6 +191,33 @@ def _validate_question_template(payload: BulkRecipeQuestionTemplate) -> None:
         )
 
 
+def _validate_generated_question(payload: BulkGeneratedQuestionPreview) -> None:
+    if not payload.prompt_text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Generated questions must include prompt_text",
+        )
+
+    if payload.question_type in {QuestionType.SINGLE_CHOICE, QuestionType.MULTI_CHOICE}:
+        if not payload.choices:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Choice-based generated questions must include at least one choice",
+            )
+    elif payload.choices:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Text generated questions cannot include choices",
+        )
+
+    values = [choice.value for choice in payload.choices]
+    if len(values) != len(set(values)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Choice values must be unique within a generated question",
+        )
+
+
 def _render_prompt(template: str, context: dict[str, Any]) -> str:
     try:
         return template.format(**context).strip()
@@ -304,6 +332,61 @@ def _build_bulk_preview(
             )
         )
     return preview_cases
+
+
+def _collect_case_asset_ids(cases: list[BulkRecipeCasePreview]) -> list[str]:
+    asset_ids: list[str] = []
+    for case in cases:
+        asset_ids.extend(case.stimulus_asset_ids)
+        asset_ids.extend(case.patch_asset_ids)
+    return [item for item in asset_ids if item]
+
+
+def _persist_bulk_questions(
+    db: Session,
+    *,
+    version: QuestionnaireVersion,
+    preview_cases: list[BulkRecipeCasePreview],
+    replace_existing_questions: bool,
+) -> int:
+    if replace_existing_questions:
+        db.execute(delete(Question).where(Question.questionnaire_version_id == version.id))
+
+    next_position = (
+        db.scalar(
+            select(func.max(Question.position)).where(Question.questionnaire_version_id == version.id)
+        )
+        or 0
+    )
+
+    created_questions = 0
+    for case in preview_cases:
+        for generated in case.questions:
+            _validate_generated_question(generated)
+            next_position += 1
+            question = Question(
+                questionnaire_version_id=version.id,
+                position=next_position,
+                prompt_text=generated.prompt_text.strip(),
+                question_type=generated.question_type,
+                is_required=generated.is_required,
+                config_json=json.dumps(generated.config),
+            )
+            db.add(question)
+            db.flush()
+            for choice_index, choice in enumerate(generated.choices, start=1):
+                db.add(
+                    Choice(
+                        question_id=question.id,
+                        position=choice_index,
+                        label=choice.label,
+                        value=choice.value,
+                    )
+                )
+            created_questions += 1
+
+    version.updated_at = utcnow()
+    return created_questions
 
 
 @router.get("", response_model=list[QuestionnaireSummaryOut])
@@ -782,44 +865,55 @@ def apply_bulk_recipe(
             detail="No cases were generated from the provided recipe and assets",
         )
 
-    if payload.replace_existing_questions:
-        db.execute(delete(Question).where(Question.questionnaire_version_id == version.id))
-
-    next_position = (
-        db.scalar(
-            select(func.max(Question.position)).where(Question.questionnaire_version_id == version.id)
-        )
-        or 0
+    created_questions = _persist_bulk_questions(
+        db,
+        version=version,
+        preview_cases=preview_cases,
+        replace_existing_questions=payload.replace_existing_questions,
     )
-    created_questions = 0
-    for case in preview_cases:
-        for generated in case.questions:
-            next_position += 1
-            question = Question(
-                questionnaire_version_id=version.id,
-                position=next_position,
-                prompt_text=generated.prompt_text,
-                question_type=generated.question_type,
-                is_required=generated.is_required,
-                config_json=json.dumps(generated.config),
-            )
-            db.add(question)
-            db.flush()
-            for choice_index, choice in enumerate(generated.choices, start=1):
-                db.add(
-                    Choice(
-                        question_id=question.id,
-                        position=choice_index,
-                        label=choice.label,
-                        value=choice.value,
-                    )
-                )
-            created_questions += 1
-
-    version.updated_at = utcnow()
     db.commit()
     return BulkRecipeApplyResponse(
         cases=len(preview_cases),
         created_questions=created_questions,
         warnings=grouping_result.warnings,
+    )
+
+
+@router.post(
+    "/{questionnaire_id}/versions/{version_id}/bulk-recipes/apply-preview",
+    response_model=BulkRecipeApplyResponse,
+)
+def apply_bulk_recipe_preview(
+    questionnaire_id: str,
+    version_id: str,
+    payload: BulkRecipeApplyPreviewRequest,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> BulkRecipeApplyResponse:
+    _get_accessible_questionnaire(db, questionnaire_id=questionnaire_id, user=current_user)
+    version = _get_version_for_questionnaire(db, questionnaire_id=questionnaire_id, version_id=version_id)
+    _ensure_draft(version)
+
+    total_questions = sum(len(case.questions) for case in payload.cases)
+    if total_questions == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="cases must include at least one generated question",
+        )
+
+    referenced_asset_ids = _collect_case_asset_ids(payload.cases)
+    if referenced_asset_ids:
+        _get_accessible_assets(db, asset_ids=referenced_asset_ids, user=current_user)
+
+    created_questions = _persist_bulk_questions(
+        db,
+        version=version,
+        preview_cases=payload.cases,
+        replace_existing_questions=payload.replace_existing_questions,
+    )
+    db.commit()
+    return BulkRecipeApplyResponse(
+        cases=len(payload.cases),
+        created_questions=created_questions,
+        warnings=[],
     )

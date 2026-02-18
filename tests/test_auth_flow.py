@@ -180,3 +180,53 @@ def test_admin_can_only_create_user_tokens(test_session_factory) -> None:
         )
         assert ok.status_code == 200
         assert ok.json()["questionnaire_version_ids"] == [version_id]
+
+
+def test_superadmin_user_management_endpoints(test_session_factory) -> None:
+    settings = get_settings()
+
+    with test_session_factory() as db:
+        _, bootstrap_token = issue_signup_token(
+            db,
+            role=Role.SUPERADMIN,
+            created_by_id=None,
+            expires_in_minutes=60,
+            token_pepper=settings.token_pepper,
+        )
+        db.commit()
+
+    with TestClient(app) as super_client:
+        root = _signup(super_client, "root", token=bootstrap_token)
+        root_id = root["user"]["id"]
+
+        admin_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        )
+        assert admin_token.status_code == 200
+
+        with TestClient(app) as admin_client:
+            admin = _signup(admin_client, "designer", token=admin_token.json()["token"])
+            admin_id = admin["user"]["id"]
+
+            forbidden_list = admin_client.get("/api/admin/users")
+            assert forbidden_list.status_code == 403
+
+        users = super_client.get("/api/admin/users")
+        assert users.status_code == 200
+        ids = {item["id"] for item in users.json()}
+        assert root_id in ids
+        assert admin_id in ids
+
+        updated_admin = super_client.patch(
+            f"/api/admin/users/{admin_id}",
+            json={"role": "user", "is_active": True},
+        )
+        assert updated_admin.status_code == 200
+        assert updated_admin.json()["role"] == "user"
+
+        forbid_self_deactivate = super_client.patch(
+            f"/api/admin/users/{root_id}",
+            json={"is_active": False},
+        )
+        assert forbid_self_deactivate.status_code == 400

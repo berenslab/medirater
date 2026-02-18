@@ -237,3 +237,76 @@ def test_case_with_patches_recipe_preview_and_apply(test_session_factory) -> Non
         assert len(questions) == 5
         patch_questions = [q for q in questions if "patch_asset_id" in q["config"]]
         assert len(patch_questions) == 3
+
+
+def test_apply_edited_preview_questions(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+        admin_token = client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        ).json()["token"]
+
+    with TestClient(app) as client:
+        _signup(client, "designer3", token=admin_token)
+        created = client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Preview edit apply",
+                "description": "bulk test",
+                "instructions_markdown": "instr",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        asset_ids = _upload_assets(client, ["OCT/001a.png"])
+        preview = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/bulk-recipes/preview",
+            json={
+                "recipe_type": "single_per_file",
+                "asset_ids": asset_ids,
+                "recipe_config": {},
+                "question_templates": [
+                    {
+                        "prompt_template": "Case {case_index}/{case_total}: initial prompt",
+                        "question_type": "short_text",
+                        "is_required": True,
+                        "choices": [],
+                    }
+                ],
+            },
+        )
+        assert preview.status_code == 200
+        preview_json = preview.json()
+        assert len(preview_json["cases"]) == 1
+
+        edited_cases = preview_json["cases"]
+        edited_cases[0]["questions"][0]["prompt_text"] = "Edited prompt from frontend"
+        edited_cases[0]["questions"][0]["question_type"] = "single_choice"
+        edited_cases[0]["questions"][0]["choices"] = [
+            {"label": "Normal", "value": "normal"},
+            {"label": "Abnormal", "value": "abnormal"},
+        ]
+
+        applied = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/bulk-recipes/apply-preview",
+            json={
+                "replace_existing_questions": True,
+                "cases": edited_cases,
+            },
+        )
+        assert applied.status_code == 200
+        assert applied.json()["created_questions"] == 1
+
+        detail = client.get(f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}")
+        assert detail.status_code == 200
+        questions = detail.json()["questions"]
+        assert len(questions) == 1
+        assert questions[0]["prompt_text"] == "Edited prompt from frontend"
+        assert questions[0]["question_type"] == "single_choice"
+        assert [item["value"] for item in questions[0]["choices"]] == ["normal", "abnormal"]

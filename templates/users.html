@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Users</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --panel: #ffffff;
+      --text: #1a2330;
+      --muted: #56657a;
+      --accent: #0a6c7e;
+      --border: #d7e1ea;
+      --ok: #1f7a45;
+      --err: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20px;
+    }
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.2rem; }
+    .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
+    nav { display: flex; gap: 10px; }
+    nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+    .content {
+      padding: 14px;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button, select {
+      font: inherit;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+    }
+    select {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      background: #fff;
+    }
+    .status {
+      margin-top: 8px;
+      min-height: 18px;
+      font-size: 0.9rem;
+    }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 0.88rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      padding: 7px 6px;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="header">
+      <div>
+        <h1>User Management</h1>
+        <div id="whoami" class="meta">Loading user...</div>
+      </div>
+      <nav>
+        {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
+        {% if show_users_link %}<a href="/users">Users</a>{% endif %}
+        {% if show_settings_link %}<a href="/settings">Settings</a>{% endif %}
+      </nav>
+    </section>
+
+    <section class="content">
+      <div class="toolbar">
+        <div class="muted">Superadmin can change role and active state for any user.</div>
+        <button id="refresh-btn">Refresh users</button>
+      </div>
+      <div id="status" class="status"></div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>ID</th>
+            <th>Role</th>
+            <th>Active</th>
+            <th>Created</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const state = { me: null, users: [] };
+
+    function setStatus(message, ok) {
+      const el = document.getElementById("status");
+      el.className = ok ? "status ok" : "status err";
+      el.textContent = message || "";
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = {};
+      }
+      if (!response.ok) {
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      return data;
+    }
+
+    function renderUsers() {
+      const tbody = document.getElementById("tbody");
+      tbody.innerHTML = "";
+
+      if (!state.users.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="6" class="muted">No users found.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+
+      for (const user of state.users) {
+        const isSelf = state.me && state.me.id === user.id;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${user.username}${isSelf ? " (you)" : ""}</td>
+          <td>${user.id}</td>
+          <td>
+            <select data-role-for="${user.id}" ${isSelf ? "disabled" : ""}>
+              <option value="user" ${user.role === "user" ? "selected" : ""}>user</option>
+              <option value="admin" ${user.role === "admin" ? "selected" : ""}>admin</option>
+              <option value="superadmin" ${user.role === "superadmin" ? "selected" : ""}>superadmin</option>
+            </select>
+          </td>
+          <td>
+            <select data-active-for="${user.id}" ${isSelf ? "disabled" : ""}>
+              <option value="true" ${user.is_active ? "selected" : ""}>true</option>
+              <option value="false" ${!user.is_active ? "selected" : ""}>false</option>
+            </select>
+          </td>
+          <td>${user.created_at}</td>
+          <td><button type="button" data-save-for="${user.id}" ${isSelf ? "disabled" : ""}>Save</button></td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      for (const btn of document.querySelectorAll("[data-save-for]")) {
+        btn.addEventListener("click", async (event) => {
+          const userId = event.currentTarget.getAttribute("data-save-for");
+          const role = document.querySelector(`[data-role-for='${userId}']`)?.value;
+          const isActiveValue = document.querySelector(`[data-active-for='${userId}']`)?.value;
+          if (!role || !isActiveValue) return;
+
+          try {
+            await requestJson(`/api/admin/users/${userId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                role,
+                is_active: isActiveValue === "true",
+              }),
+            });
+            setStatus("User updated.", true);
+            await loadUsers();
+          } catch (error) {
+            setStatus(error.message || String(error), false);
+          }
+        });
+      }
+    }
+
+    async function loadUsers() {
+      try {
+        state.users = await requestJson("/api/admin/users");
+        renderUsers();
+        setStatus(`Loaded ${state.users.length} users.`, true);
+      } catch (error) {
+        state.users = [];
+        renderUsers();
+        setStatus(error.message || String(error), false);
+      }
+    }
+
+    async function init() {
+      try {
+        state.me = await requestJson("/api/auth/me");
+        document.getElementById("whoami").textContent = `Signed in as ${state.me.username} (${state.me.role})`;
+      } catch (error) {
+        document.getElementById("whoami").textContent = error.message || String(error);
+      }
+      await loadUsers();
+    }
+
+    document.getElementById("refresh-btn").addEventListener("click", loadUsers);
+
+    init();
+  </script>
+</body>
+</html>

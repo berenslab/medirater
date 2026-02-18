@@ -188,7 +188,7 @@
         });
 
         setStatus("Login successful. Redirecting...", true);
-        window.setTimeout(() => { window.location.href = "/me"; }, 400);
+        window.setTimeout(() => { window.location.href = "/"; }, 400);
       } catch (error) {
         setStatus(error.message || String(error), false);
       } finally {

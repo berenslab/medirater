@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Questionnaire Design</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --panel: #ffffff;
+      --text: #1a2330;
+      --muted: #56657a;
+      --accent: #0a6c7e;
+      --border: #d7e1ea;
+      --ok: #1f7a45;
+      --err: #b42318;
+      --warn: #9a6700;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20px;
+    }
+    .container {
+      max-width: 1160px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.2rem; }
+    .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
+    nav { display: flex; gap: 10px; }
+    nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+    .content {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 12px;
+      padding: 14px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fcfdff;
+      padding: 12px;
+    }
+    h2 { margin: 0 0 10px; font-size: 1rem; }
+    label {
+      display: block;
+      margin: 8px 0 4px;
+      font-size: 0.88rem;
+      color: #334357;
+    }
+    input, textarea, select, button {
+      font: inherit;
+    }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    textarea { min-height: 84px; resize: vertical; }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button.secondary { background: #4d5f70; }
+    button.warn { background: #9a6700; }
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .status { margin-top: 8px; min-height: 18px; font-size: 0.9rem; }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    .warn { color: var(--warn); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-top: 8px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      padding: 7px 6px;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    .muted { color: var(--muted); }
+    @media (max-width: 960px) {
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="header">
+      <div>
+        <h1>Questionnaire Design</h1>
+        <div id="headline" class="meta">Loading questionnaire...</div>
+      </div>
+      <nav>
+        {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
+        {% if show_users_link %}<a href="/users">Users</a>{% endif %}
+        {% if show_settings_link %}<a href="/settings">Settings</a>{% endif %}
+      </nav>
+    </section>
+
+    <section class="content">
+      <article class="card">
+        <h2>Questionnaire and version</h2>
+
+        <label for="q-title">Title</label>
+        <input id="q-title" />
+
+        <label for="q-description">Description</label>
+        <textarea id="q-description"></textarea>
+
+        <button id="save-q-btn">Save questionnaire</button>
+
+        <label for="version-select">Working version</label>
+        <select id="version-select"></select>
+
+        <div class="row">
+          <button id="load-version-btn" class="secondary">Load version</button>
+          <button id="new-draft-btn" class="secondary">Create new draft</button>
+          <button id="publish-btn" class="warn">Publish draft</button>
+        </div>
+
+        <label for="instructions">Instructions (markdown)</label>
+        <textarea id="instructions"></textarea>
+        <button id="save-instructions-btn">Save instructions</button>
+
+        <div id="version-status" class="status"></div>
+      </article>
+
+      <article class="card">
+        <h2>Questions in selected draft</h2>
+        <p class="muted">Design is done after questionnaire creation, version by version.</p>
+
+        <div class="row">
+          <button id="refresh-questions-btn" class="secondary">Refresh questions</button>
+        </div>
+
+        <label for="position">Position</label>
+        <input id="position" type="number" min="1" value="1" />
+
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt"></textarea>
+
+        <label for="type">Type</label>
+        <select id="type">
+          <option value="single_choice">single_choice</option>
+          <option value="multi_choice">multi_choice</option>
+          <option value="short_text">short_text</option>
+          <option value="long_text">long_text</option>
+        </select>
+
+        <label for="required">Required</label>
+        <select id="required">
+          <option value="true">true</option>
+          <option value="false">false</option>
+        </select>
+
+        <label for="config">Config JSON</label>
+        <textarea id="config">{}</textarea>
+
+        <label for="choices">Choices (label|value per line)</label>
+        <textarea id="choices" placeholder="Normal|normal&#10;Abnormal|abnormal"></textarea>
+
+        <button id="add-question-btn">Add question</button>
+        <div id="question-status" class="status"></div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Pos</th>
+              <th>Prompt</th>
+              <th>Type</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="questions-tbody"></tbody>
+        </table>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const QUESTIONNAIRE_ID = {{ questionnaire_id | tojson }};
+
+    const state = {
+      me: null,
+      questionnaire: null,
+      selectedVersionId: null,
+      versionDetail: null,
+    };
+
+    function setStatus(id, message, mode) {
+      const el = document.getElementById(id);
+      el.className = `status ${mode}`;
+      el.textContent = message || "";
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = {};
+      }
+      if (!response.ok) {
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      return data;
+    }
+
+    function parseJson(raw, label) {
+      try {
+        return JSON.parse(raw);
+      } catch (_error) {
+        throw new Error(`${label} must be valid JSON.`);
+      }
+    }
+
+    function parseChoices(raw) {
+      const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
+      return lines.map((line, index) => {
+        const parts = line.split("|");
+        const label = (parts[0] || "").trim();
+        const value = (parts[1] || parts[0] || "").trim();
+        if (!label || !value) {
+          throw new Error(`Invalid choice line ${index + 1}.`);
+        }
+        return { position: index + 1, label, value };
+      });
+    }
+
+    function selectedVersion() {
+      if (!state.questionnaire) return null;
+      return (state.questionnaire.versions || []).find((item) => item.id === state.selectedVersionId) || null;
+    }
+
+    function selectedVersionIsDraft() {
+      const version = selectedVersion();
+      return Boolean(version && version.status === "draft");
+    }
+
+    function syncDraftControls() {
+      const isDraft = selectedVersionIsDraft();
+      document.getElementById("save-instructions-btn").disabled = !isDraft;
+      document.getElementById("add-question-btn").disabled = !isDraft;
+      document.getElementById("publish-btn").disabled = !isDraft;
+      if (!isDraft) {
+        setStatus("version-status", "Selected version is not draft. Edit actions disabled.", "warn");
+      }
+    }
+
+    function renderVersionSelect() {
+      const select = document.getElementById("version-select");
+      select.innerHTML = "";
+      const versions = [...(state.questionnaire?.versions || [])].sort((a, b) => b.version_number - a.version_number);
+
+      if (!versions.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No versions";
+        select.appendChild(option);
+        return;
+      }
+
+      for (const version of versions) {
+        const option = document.createElement("option");
+        option.value = version.id;
+        option.textContent = `v${version.version_number} (${version.status})`;
+        select.appendChild(option);
+      }
+
+      if (!state.selectedVersionId) {
+        const draft = versions.find((item) => item.status === "draft");
+        state.selectedVersionId = (draft || versions[0]).id;
+      }
+      select.value = state.selectedVersionId;
+    }
+
+    function renderQuestions() {
+      const tbody = document.getElementById("questions-tbody");
+      tbody.innerHTML = "";
+      const questions = state.versionDetail?.questions || [];
+      if (!questions.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="4" class="muted">No questions yet.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+
+      for (const item of questions) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${item.position}</td>
+          <td>${item.prompt_text}</td>
+          <td>${item.question_type}</td>
+          <td><button type="button" data-delete-id="${item.id}">Delete</button></td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      for (const btn of document.querySelectorAll("[data-delete-id]")) {
+        btn.addEventListener("click", async (event) => {
+          try {
+            if (!selectedVersionIsDraft()) {
+              throw new Error("Only draft versions are editable.");
+            }
+            const questionId = event.currentTarget.getAttribute("data-delete-id");
+            await requestJson(
+              `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/questions/${questionId}`,
+              { method: "DELETE" },
+            );
+            setStatus("question-status", "Question deleted.", "ok");
+            await loadVersionDetail();
+          } catch (error) {
+            setStatus("question-status", error.message || String(error), "err");
+          }
+        });
+      }
+    }
+
+    async function loadQuestionnaire() {
+      const detail = await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}`);
+      state.questionnaire = detail;
+      document.getElementById("headline").textContent = `${detail.title} (${detail.id})`;
+      document.getElementById("q-title").value = detail.title || "";
+      document.getElementById("q-description").value = detail.description || "";
+      renderVersionSelect();
+      syncDraftControls();
+    }
+
+    async function loadVersionDetail() {
+      if (!state.selectedVersionId) {
+        state.versionDetail = null;
+        renderQuestions();
+        return;
+      }
+      const detail = await requestJson(
+        `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}`,
+      );
+      state.versionDetail = detail;
+      document.getElementById("instructions").value = detail.instructions_markdown || "";
+      const nextPosition = Math.max(0, ...(detail.questions || []).map((item) => item.position)) + 1;
+      document.getElementById("position").value = String(nextPosition);
+      renderQuestions();
+      syncDraftControls();
+      setStatus("version-status", `Loaded v${detail.version_number} (${detail.status}).`, "ok");
+    }
+
+    async function init() {
+      try {
+        const me = await requestJson("/api/auth/me");
+        state.me = me;
+        document.getElementById("headline").textContent = `Loading questionnaire for ${me.username} (${me.role})...`;
+      } catch (_error) {
+        // keep loading detail path
+      }
+
+      try {
+        await loadQuestionnaire();
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("version-status", error.message || String(error), "err");
+      }
+    }
+
+    document.getElementById("version-select").addEventListener("change", (event) => {
+      state.selectedVersionId = event.currentTarget.value || null;
+      syncDraftControls();
+    });
+
+    document.getElementById("load-version-btn").addEventListener("click", async () => {
+      try {
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("version-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("save-q-btn").addEventListener("click", async () => {
+      try {
+        const title = document.getElementById("q-title").value.trim();
+        if (!title) {
+          throw new Error("Title is required.");
+        }
+        const descriptionRaw = document.getElementById("q-description").value.trim();
+
+        await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, description: descriptionRaw || null }),
+        });
+        setStatus("version-status", "Questionnaire saved.", "ok");
+        await loadQuestionnaire();
+      } catch (error) {
+        setStatus("version-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("new-draft-btn").addEventListener("click", async () => {
+      try {
+        const created = await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instructions_markdown: document.getElementById("instructions").value }),
+        });
+        state.selectedVersionId = created.id;
+        await loadQuestionnaire();
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("version-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("save-instructions-btn").addEventListener("click", async () => {
+      try {
+        if (!selectedVersionIsDraft()) {
+          throw new Error("Only draft versions are editable.");
+        }
+        await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instructions_markdown: document.getElementById("instructions").value }),
+        });
+        setStatus("version-status", "Instructions saved.", "ok");
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("version-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("publish-btn").addEventListener("click", async () => {
+      try {
+        if (!selectedVersionIsDraft()) {
+          throw new Error("Only draft versions can be published.");
+        }
+        await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/publish`, {
+          method: "POST",
+        });
+        setStatus("version-status", "Draft published.", "ok");
+        await loadQuestionnaire();
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("version-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("refresh-questions-btn").addEventListener("click", async () => {
+      try {
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("question-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("add-question-btn").addEventListener("click", async () => {
+      try {
+        if (!selectedVersionIsDraft()) {
+          throw new Error("Only draft versions are editable.");
+        }
+        const position = Number(document.getElementById("position").value);
+        if (!Number.isInteger(position) || position < 1) {
+          throw new Error("Position must be a positive integer.");
+        }
+        const prompt = document.getElementById("prompt").value.trim();
+        if (!prompt) {
+          throw new Error("Prompt is required.");
+        }
+
+        const questionType = document.getElementById("type").value;
+        const isRequired = document.getElementById("required").value === "true";
+        const config = parseJson(document.getElementById("config").value, "Config");
+        const choicesRaw = document.getElementById("choices").value;
+        const choices = parseChoices(choicesRaw);
+
+        await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/questions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            position,
+            prompt_text: prompt,
+            question_type: questionType,
+            is_required: isRequired,
+            config,
+            choices,
+          }),
+        });
+
+        setStatus("question-status", "Question created.", "ok");
+        document.getElementById("prompt").value = "";
+        document.getElementById("config").value = "{}";
+        document.getElementById("choices").value = "";
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("question-status", error.message || String(error), "err");
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

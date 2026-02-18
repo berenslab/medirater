@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_db
-from app.models import Role
+from app.models import Questionnaire, Role
 from app.services.session_service import get_user_by_session_token
 
 router = APIRouter(include_in_schema=False)
@@ -23,12 +23,30 @@ def _current_user_from_session(request: Request, db: Session, settings: Settings
     return get_user_by_session_token(db, session_token=session_token)
 
 
-def _show_admin_link_for_user(user) -> bool:
-    return bool(user and user.role in {Role.ADMIN, Role.SUPERADMIN})
+def _landing_url_for(user) -> str:
+    if user and user.role in {Role.ADMIN, Role.SUPERADMIN}:
+        return "/questionnaires"
+    return "/settings"
+
+
+def _nav_context(user) -> dict[str, bool]:
+    is_admin = bool(user and user.role in {Role.ADMIN, Role.SUPERADMIN})
+    return {
+        "show_questionnaires_link": is_admin,
+        "show_users_link": bool(user and user.role == Role.SUPERADMIN),
+        "show_settings_link": bool(user),
+    }
 
 
 @router.get("/")
-def index() -> RedirectResponse:
+def index(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> RedirectResponse:
+    user = _current_user_from_session(request, db, settings)
+    if user:
+        return RedirectResponse(url=_landing_url_for(user), status_code=303)
     return RedirectResponse(url="/login", status_code=307)
 
 
@@ -38,8 +56,9 @@ def signup_page(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
-    if _current_user_from_session(request, db, settings):
-        return RedirectResponse(url="/me", status_code=303)
+    user = _current_user_from_session(request, db, settings)
+    if user:
+        return RedirectResponse(url=_landing_url_for(user), status_code=303)
 
     return templates.TemplateResponse(
         request=request,
@@ -60,8 +79,9 @@ def admin_signup_page(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
-    if _current_user_from_session(request, db, settings):
-        return RedirectResponse(url="/me", status_code=303)
+    user = _current_user_from_session(request, db, settings)
+    if user:
+        return RedirectResponse(url=_landing_url_for(user), status_code=303)
 
     return templates.TemplateResponse(
         request=request,
@@ -83,8 +103,9 @@ def login_page(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
-    if _current_user_from_session(request, db, settings):
-        return RedirectResponse(url="/me", status_code=303)
+    user = _current_user_from_session(request, db, settings)
+    if user:
+        return RedirectResponse(url=_landing_url_for(user), status_code=303)
 
     return templates.TemplateResponse(
         request=request,
@@ -96,22 +117,8 @@ def login_page(
     )
 
 
-@router.get("/passkeys")
-def passkeys_page(
-    request: Request,
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-):
-    user = _current_user_from_session(request, db, settings)
-    return templates.TemplateResponse(
-        request=request,
-        name="passkeys.html",
-        context={"show_admin_link": _show_admin_link_for_user(user)},
-    )
-
-
-@router.get("/admin")
-def admin_page(
+@router.get("/questionnaires")
+def questionnaires_page(
     request: Request,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -121,22 +128,99 @@ def admin_page(
         return RedirectResponse(url="/login", status_code=303)
 
     if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
-        return RedirectResponse(url="/me", status_code=303)
+        return RedirectResponse(url="/settings", status_code=303)
 
     return templates.TemplateResponse(
-        request=request, name="admin.html", context={"show_admin_link": True}
+        request=request,
+        name="questionnaires.html",
+        context={
+            **_nav_context(user),
+        },
     )
 
 
-@router.get("/me")
-def me_page(
+@router.get("/questionnaires/{questionnaire_id}/design")
+def questionnaire_design_page(
+    questionnaire_id: str,
     request: Request,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
     user = _current_user_from_session(request, db, settings)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
+        return RedirectResponse(url="/settings", status_code=303)
+
+    questionnaire = db.get(Questionnaire, questionnaire_id)
+    if not questionnaire:
+        return RedirectResponse(url="/questionnaires", status_code=303)
+
+    if user.role != Role.SUPERADMIN and questionnaire.owner_admin_id != user.id:
+        return RedirectResponse(url="/questionnaires", status_code=303)
+
     return templates.TemplateResponse(
         request=request,
-        name="me.html",
-        context={"show_admin_link": _show_admin_link_for_user(user)},
+        name="questionnaire_design.html",
+        context={
+            **_nav_context(user),
+            "questionnaire_id": questionnaire_id,
+        },
     )
+
+
+@router.get("/users")
+def users_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    user = _current_user_from_session(request, db, settings)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    if user.role != Role.SUPERADMIN:
+        return RedirectResponse(url=_landing_url_for(user), status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="users.html",
+        context={
+            **_nav_context(user),
+        },
+    )
+
+
+@router.get("/settings")
+def settings_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    user = _current_user_from_session(request, db, settings)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={
+            **_nav_context(user),
+        },
+    )
+
+
+@router.get("/admin")
+def admin_page() -> RedirectResponse:
+    return RedirectResponse(url="/questionnaires", status_code=303)
+
+
+@router.get("/passkeys")
+def passkeys_page() -> RedirectResponse:
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@router.get("/me")
+def me_page() -> RedirectResponse:
+    return RedirectResponse(url="/settings", status_code=303)

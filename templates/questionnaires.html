@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Questionnaires</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --panel: #ffffff;
+      --text: #1a2330;
+      --muted: #56657a;
+      --accent: #0a6c7e;
+      --border: #d7e1ea;
+      --ok: #1f7a45;
+      --err: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20px;
+    }
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 1.2rem;
+    }
+    .header .meta {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-top: 3px;
+    }
+    nav { display: flex; gap: 10px; }
+    nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+    .content {
+      display: grid;
+      gap: 14px;
+      padding: 14px;
+      grid-template-columns: 330px 1fr;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fcfdff;
+      padding: 12px;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1rem;
+    }
+    label {
+      display: block;
+      margin: 8px 0 4px;
+      font-size: 0.88rem;
+      color: #334357;
+    }
+    input, textarea, button {
+      font: inherit;
+    }
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button.secondary {
+      background: #4d5f70;
+    }
+    .status {
+      margin-top: 8px;
+      min-height: 18px;
+      font-size: 0.9rem;
+    }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    .muted { color: var(--muted); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      padding: 7px 6px;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    @media (max-width: 960px) {
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="header">
+      <div>
+        <h1>Questionnaires</h1>
+        <div id="whoami" class="meta">Loading user...</div>
+      </div>
+      <nav>
+        {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
+        {% if show_users_link %}<a href="/users">Users</a>{% endif %}
+        {% if show_settings_link %}<a href="/settings">Settings</a>{% endif %}
+      </nav>
+    </section>
+
+    <section class="content">
+      <article class="card">
+        <h2>Create questionnaire</h2>
+        <label for="title">Title</label>
+        <input id="title" placeholder="e.g. OCT baseline" />
+
+        <label for="description">Description</label>
+        <textarea id="description"></textarea>
+
+        <label for="instructions">Initial instructions</label>
+        <textarea id="instructions"></textarea>
+
+        <button id="create-btn">Create</button>
+        <div id="create-status" class="status"></div>
+      </article>
+
+      <article class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <h2 style="margin:0;">All accessible questionnaires</h2>
+          <button id="refresh-btn" class="secondary">Refresh</button>
+        </div>
+        <div id="list-status" class="status"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Owner</th>
+              <th>Latest</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    function setStatus(id, message, ok) {
+      const el = document.getElementById(id);
+      el.className = ok ? "status ok" : "status err";
+      el.textContent = message || "";
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = {};
+      }
+      if (!response.ok) {
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      return data;
+    }
+
+    function renderRows(items) {
+      const tbody = document.getElementById("tbody");
+      tbody.innerHTML = "";
+      if (!items.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="4" class="muted">No questionnaires yet.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+
+      for (const item of items) {
+        const latest = item.latest_version_number
+          ? `v${item.latest_version_number} (${item.latest_version_status})`
+          : "-";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${item.title}</td>
+          <td>${item.owner_admin_id}</td>
+          <td>${latest}</td>
+          <td><a href="/questionnaires/${item.id}/design">Design</a></td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function loadQuestionnaires() {
+      try {
+        const items = await requestJson("/api/admin/questionnaires");
+        renderRows(items || []);
+        setStatus("list-status", `Loaded ${items.length} questionnaires.`, true);
+      } catch (error) {
+        renderRows([]);
+        setStatus("list-status", error.message || String(error), false);
+      }
+    }
+
+    async function init() {
+      try {
+        const me = await requestJson("/api/auth/me");
+        document.getElementById("whoami").textContent = `Signed in as ${me.username} (${me.role})`;
+      } catch (error) {
+        document.getElementById("whoami").textContent = error.message || String(error);
+      }
+      await loadQuestionnaires();
+    }
+
+    document.getElementById("refresh-btn").addEventListener("click", loadQuestionnaires);
+
+    document.getElementById("create-btn").addEventListener("click", async () => {
+      try {
+        const title = document.getElementById("title").value.trim();
+        if (!title) {
+          throw new Error("Title is required.");
+        }
+        const descriptionRaw = document.getElementById("description").value.trim();
+        const instructions = document.getElementById("instructions").value;
+
+        await requestJson("/api/admin/questionnaires", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            description: descriptionRaw || null,
+            instructions_markdown: instructions,
+          }),
+        });
+
+        setStatus("create-status", "Questionnaire created.", true);
+        document.getElementById("title").value = "";
+        document.getElementById("description").value = "";
+        document.getElementById("instructions").value = "";
+        await loadQuestionnaires();
+      } catch (error) {
+        setStatus("create-status", error.message || String(error), false);
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
