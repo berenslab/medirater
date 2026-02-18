@@ -54,6 +54,7 @@ uv run uvicorn app.main:app --reload
 - Admin signup (token required): `http://localhost:8000/admin_signup`
 - Questionnaires: `http://localhost:8000/questionnaires`
 - Users (superadmin): `http://localhost:8000/users`
+- Assigned (user): `http://localhost:8000/assigned`
 - Settings: `http://localhost:8000/settings`
 - API docs: `http://localhost:8000/docs`
 
@@ -74,6 +75,7 @@ uv run uvicorn app.main:app --reload
 - passkey management
 - signup mode control (superadmin only)
 - signup token creation/list
+6. Login as a scoped `user` and go to `/assigned` to open `/answer/{questionnaire_version_id}/consent`, then answer one page at a time via `/answer/{questionnaire_version_id}?q=N`.
 
 ## Bulk Recipe Types (Current)
 

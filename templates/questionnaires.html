@@ -137,6 +137,7 @@
       <nav>
         {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
         {% if show_users_link %}<a href="/users">Users</a>{% endif %}
+        {% if show_assigned_link %}<a href="/assigned">Assigned</a>{% endif %}
         {% if show_settings_link %}<a href="/settings">Settings</a>{% endif %}
       </nav>
     </section>
@@ -213,12 +214,15 @@
         const latest = item.latest_version_number
           ? `v${item.latest_version_number} (${item.latest_version_status})`
           : "-";
+        const answerLink = item.latest_version_status === "published" && item.latest_version_id
+          ? ` | <a href="/answer/${item.latest_version_id}/consent">Answer</a>`
+          : "";
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${item.title}</td>
           <td>${item.owner_admin_id}</td>
           <td>${latest}</td>
-          <td><a href="/questionnaires/${item.id}/design">Design</a></td>
+          <td><a href="/questionnaires/${item.id}/design">Design</a>${answerLink}</td>
         `;
         tbody.appendChild(tr);
       }

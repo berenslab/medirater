@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="google" content="notranslate" />
   <meta http-equiv="Content-Language" content="en" />
-  <title>Users</title>
+  <title>Assigned Questionnaires</title>
   <style>
     :root {
       --bg: #f6f9fc;
@@ -47,19 +47,8 @@
     .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
     nav { display: flex; gap: 10px; }
     nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
-    .content {
-      padding: 14px;
-    }
-    .toolbar {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    button, select {
-      font: inherit;
-    }
+    .content { padding: 14px; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     button {
       border: 0;
       border-radius: 8px;
@@ -67,25 +56,17 @@
       background: var(--accent);
       color: #fff;
       cursor: pointer;
+      font: inherit;
     }
-    select {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 6px 8px;
-      background: #fff;
-    }
-    .status {
-      margin-top: 8px;
-      min-height: 18px;
-      font-size: 0.9rem;
-    }
+    .status { margin-top: 8px; min-height: 18px; font-size: 0.9rem; }
     .ok { color: var(--ok); }
     .err { color: var(--err); }
+    .muted { color: var(--muted); }
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 10px;
-      font-size: 0.88rem;
+      font-size: 0.9rem;
     }
     th, td {
       border-bottom: 1px solid var(--border);
@@ -94,14 +75,13 @@
       vertical-align: top;
       word-break: break-word;
     }
-    .muted { color: var(--muted); }
   </style>
 </head>
 <body>
   <main class="container">
     <section class="header">
       <div>
-        <h1>User Management</h1>
+        <h1>Assigned Questionnaires</h1>
         <div id="whoami" class="meta">Loading user...</div>
       </div>
       <nav>
@@ -113,20 +93,19 @@
     </section>
 
     <section class="content">
-      <div class="toolbar">
-        <div class="muted">Superadmin can change role and active state for any user.</div>
-        <button id="refresh-btn">Refresh users</button>
+      <div class="row">
+        <button id="refresh-btn">Refresh</button>
       </div>
       <div id="status" class="status"></div>
 
       <table>
         <thead>
           <tr>
-            <th>Username</th>
-            <th>ID</th>
-            <th>Role</th>
-            <th>Active</th>
-            <th>Created</th>
+            <th>Title</th>
+            <th>Version</th>
+            <th>Questions</th>
+            <th>Assigned</th>
+            <th>Submitted</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -136,8 +115,6 @@
   </main>
 
   <script>
-    const state = { me: null, users: [] };
-
     function setStatus(message, ok) {
       const el = document.getElementById("status");
       el.className = ok ? "status ok" : "status err";
@@ -158,91 +135,53 @@
       return data;
     }
 
-    function renderUsers() {
+    function renderRows(items) {
       const tbody = document.getElementById("tbody");
       tbody.innerHTML = "";
-
-      if (!state.users.length) {
+      if (!items.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="6" class="muted">No users found.</td>';
+        tr.innerHTML = '<td colspan="6" class="muted">No assigned questionnaires.</td>';
         tbody.appendChild(tr);
         return;
       }
 
-      for (const user of state.users) {
-        const isSelf = state.me && state.me.id === user.id;
+      for (const item of items) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${user.username}${isSelf ? " (you)" : ""}</td>
-          <td>${user.id}</td>
-          <td>
-            <select data-role-for="${user.id}" ${isSelf ? "disabled" : ""}>
-              <option value="user" ${user.role === "user" ? "selected" : ""}>user</option>
-              <option value="admin" ${user.role === "admin" ? "selected" : ""}>admin</option>
-              <option value="superadmin" ${user.role === "superadmin" ? "selected" : ""}>superadmin</option>
-            </select>
-          </td>
-          <td>
-            <select data-active-for="${user.id}" ${isSelf ? "disabled" : ""}>
-              <option value="true" ${user.is_active ? "selected" : ""}>true</option>
-              <option value="false" ${!user.is_active ? "selected" : ""}>false</option>
-            </select>
-          </td>
-          <td>${user.created_at}</td>
-          <td><button type="button" data-save-for="${user.id}" ${isSelf ? "disabled" : ""}>Save</button></td>
+          <td>${item.title}</td>
+          <td>v${item.version_number}</td>
+          <td>${item.question_count}</td>
+          <td>${item.assigned_at}</td>
+          <td>${item.submitted_at || "-"}</td>
+          <td><a href="/answer/${item.questionnaire_version_id}/consent">Open</a></td>
         `;
         tbody.appendChild(tr);
       }
-
-      for (const btn of document.querySelectorAll("[data-save-for]")) {
-        btn.addEventListener("click", async (event) => {
-          const userId = event.currentTarget.getAttribute("data-save-for");
-          const role = document.querySelector(`[data-role-for='${userId}']`)?.value;
-          const isActiveValue = document.querySelector(`[data-active-for='${userId}']`)?.value;
-          if (!role || !isActiveValue) return;
-
-          try {
-            await requestJson(`/api/admin/users/${userId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                role,
-                is_active: isActiveValue === "true",
-              }),
-            });
-            setStatus("User updated.", true);
-            await loadUsers();
-          } catch (error) {
-            setStatus(error.message || String(error), false);
-          }
-        });
-      }
     }
 
-    async function loadUsers() {
+    async function loadAssigned() {
       try {
-        state.users = await requestJson("/api/admin/users");
-        renderUsers();
-        setStatus(`Loaded ${state.users.length} users.`, true);
+        const items = await requestJson("/api/user/assigned-questionnaires");
+        renderRows(items || []);
+        setStatus(`Loaded ${items.length} assigned questionnaires.`, true);
       } catch (error) {
-        state.users = [];
-        renderUsers();
+        renderRows([]);
         setStatus(error.message || String(error), false);
       }
     }
 
     async function init() {
       try {
-        state.me = await requestJson("/api/auth/me");
-        document.getElementById("whoami").textContent = `Signed in as ${state.me.username} (${state.me.role})`;
+        const me = await requestJson("/api/auth/me");
+        document.getElementById("whoami").textContent = `Signed in as ${me.username} (${me.role})`;
       } catch (error) {
         document.getElementById("whoami").textContent = error.message || String(error);
       }
-      await loadUsers();
+
+      await loadAssigned();
     }
 
-    document.getElementById("refresh-btn").addEventListener("click", loadUsers);
-
+    document.getElementById("refresh-btn").addEventListener("click", loadAssigned);
     init();
   </script>
 </body>

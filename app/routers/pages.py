@@ -3,11 +3,19 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_db
-from app.models import Questionnaire, Role
+from app.models import (
+    Questionnaire,
+    QuestionnaireConsent,
+    QuestionnaireVersion,
+    QuestionnaireVersionStatus,
+    Role,
+    UserAssignment,
+)
 from app.services.session_service import get_user_by_session_token
 
 router = APIRouter(include_in_schema=False)
@@ -26,7 +34,7 @@ def _current_user_from_session(request: Request, db: Session, settings: Settings
 def _landing_url_for(user) -> str:
     if user and user.role in {Role.ADMIN, Role.SUPERADMIN}:
         return "/questionnaires"
-    return "/settings"
+    return "/assigned"
 
 
 def _nav_context(user) -> dict[str, bool]:
@@ -34,8 +42,54 @@ def _nav_context(user) -> dict[str, bool]:
     return {
         "show_questionnaires_link": is_admin,
         "show_users_link": bool(user and user.role == Role.SUPERADMIN),
+        "show_assigned_link": bool(user and user.role in {Role.USER, Role.ADMIN}),
         "show_settings_link": bool(user),
     }
+
+
+def _has_user_assignment_for_published_version(
+    db: Session,
+    *,
+    user,
+    questionnaire_version_id: str,
+) -> bool:
+    version_row = db.execute(
+        select(QuestionnaireVersion, Questionnaire)
+        .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)
+        .where(QuestionnaireVersion.id == questionnaire_version_id)
+        .where(QuestionnaireVersion.status == QuestionnaireVersionStatus.PUBLISHED)
+    ).first()
+    if not version_row:
+        return False
+    _, questionnaire = version_row
+
+    if user.role == Role.SUPERADMIN:
+        return True
+
+    if user.role == Role.ADMIN and questionnaire.owner_admin_id == user.id:
+        return True
+
+    assignment = db.scalar(
+        select(UserAssignment)
+        .where(UserAssignment.user_id == user.id)
+        .where(UserAssignment.questionnaire_version_id == questionnaire_version_id)
+        .where(UserAssignment.is_active.is_(True))
+    )
+    return bool(assignment)
+
+
+def _has_user_consent_for_version(
+    db: Session,
+    *,
+    user_id: str,
+    questionnaire_version_id: str,
+) -> bool:
+    consent = db.scalar(
+        select(QuestionnaireConsent)
+        .where(QuestionnaireConsent.user_id == user_id)
+        .where(QuestionnaireConsent.questionnaire_version_id == questionnaire_version_id)
+    )
+    return bool(consent)
 
 
 @router.get("/")
@@ -128,7 +182,7 @@ def questionnaires_page(
         return RedirectResponse(url="/login", status_code=303)
 
     if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
-        return RedirectResponse(url="/settings", status_code=303)
+        return RedirectResponse(url=_landing_url_for(user), status_code=303)
 
     return templates.TemplateResponse(
         request=request,
@@ -151,7 +205,7 @@ def questionnaire_design_page(
         return RedirectResponse(url="/login", status_code=303)
 
     if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
-        return RedirectResponse(url="/settings", status_code=303)
+        return RedirectResponse(url=_landing_url_for(user), status_code=303)
 
     questionnaire = db.get(Questionnaire, questionnaire_id)
     if not questionnaire:
@@ -166,6 +220,88 @@ def questionnaire_design_page(
         context={
             **_nav_context(user),
             "questionnaire_id": questionnaire_id,
+        },
+    )
+
+
+@router.get("/assigned")
+def assigned_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    user = _current_user_from_session(request, db, settings)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="assigned.html",
+        context={
+            **_nav_context(user),
+        },
+    )
+
+
+@router.get("/answer/{questionnaire_version_id}")
+def answer_page(
+    questionnaire_version_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    user = _current_user_from_session(request, db, settings)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    if not _has_user_assignment_for_published_version(
+        db,
+        user=user,
+        questionnaire_version_id=questionnaire_version_id,
+    ):
+        return RedirectResponse(url="/assigned", status_code=303)
+
+    if not _has_user_consent_for_version(
+        db,
+        user_id=user.id,
+        questionnaire_version_id=questionnaire_version_id,
+    ):
+        return RedirectResponse(url=f"/answer/{questionnaire_version_id}/consent", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="answer.html",
+        context={
+            **_nav_context(user),
+            "questionnaire_version_id": questionnaire_version_id,
+        },
+    )
+
+
+@router.get("/answer/{questionnaire_version_id}/consent")
+def answer_consent_page(
+    questionnaire_version_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    user = _current_user_from_session(request, db, settings)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    if not _has_user_assignment_for_published_version(
+        db,
+        user=user,
+        questionnaire_version_id=questionnaire_version_id,
+    ):
+        return RedirectResponse(url="/assigned", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="answer_consent.html",
+        context={
+            **_nav_context(user),
+            "questionnaire_version_id": questionnaire_version_id,
         },
     )
 
@@ -223,4 +359,4 @@ def passkeys_page() -> RedirectResponse:
 
 @router.get("/me")
 def me_page() -> RedirectResponse:
-    return RedirectResponse(url="/settings", status_code=303)
+    return RedirectResponse(url="/", status_code=303)

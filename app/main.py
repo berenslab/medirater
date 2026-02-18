@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import Base, SessionLocal, engine
-from app.routers import admin, assets, auth, passkeys, questionnaires
+from app.routers import admin, assets, auth, passkeys, questionnaires, user_questionnaires
 from app.services.settings_service import ensure_default_settings
 
 settings = get_settings()
@@ -52,6 +52,7 @@ app.include_router(passkeys.router)
 app.include_router(admin.router)
 app.include_router(assets.router)
 app.include_router(questionnaires.router)
+app.include_router(user_questionnaires.router)
 if settings.enable_builtin_ui:
     from app.routers import pages
 

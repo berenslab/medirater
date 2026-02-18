@@ -1,12 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.deps import get_admin_user, get_superadmin_user
-from app.models import Questionnaire, QuestionnaireVersion, QuestionnaireVersionStatus, Role, SignupToken, User
+from app.models import (
+    Questionnaire,
+    QuestionnaireVersion,
+    QuestionnaireVersionStatus,
+    Role,
+    SignupToken,
+    User,
+    UserAssignment,
+)
 from app.schemas import (
+    AssignmentCreateRequest,
+    AssignmentOut,
+    AssignmentUpdateRequest,
     AdminManagedUserOut,
     AdminUpdateUserRequest,
     CreateSignupTokenRequest,
@@ -28,6 +39,28 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 def _to_admin_managed_user_out(user: User) -> AdminManagedUserOut:
     return AdminManagedUserOut.model_validate(user)
+
+
+def _to_assignment_out(
+    assignment: UserAssignment,
+    *,
+    user: User,
+    version: QuestionnaireVersion,
+    questionnaire: Questionnaire,
+) -> AssignmentOut:
+    return AssignmentOut(
+        id=assignment.id,
+        user_id=user.id,
+        username=user.username,
+        user_role=user.role,
+        questionnaire_id=questionnaire.id,
+        questionnaire_version_id=version.id,
+        questionnaire_title=questionnaire.title,
+        questionnaire_version_number=version.version_number,
+        granted_by_id=assignment.granted_by_id,
+        is_active=assignment.is_active,
+        created_at=assignment.created_at,
+    )
 
 
 @router.get("/settings/public-signup-mode", response_model=SignupModeResponse)
@@ -220,3 +253,116 @@ def update_user_for_superadmin(
     db.commit()
     db.refresh(user)
     return _to_admin_managed_user_out(user)
+
+
+@router.get("/assignments", response_model=list[AssignmentOut])
+def list_assignments(
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    target_user_id: str | None = Query(default=None),
+    questionnaire_version_id: str | None = Query(default=None),
+) -> list[AssignmentOut]:
+    stmt = (
+        select(UserAssignment, User, QuestionnaireVersion, Questionnaire)
+        .join(User, User.id == UserAssignment.user_id)
+        .join(QuestionnaireVersion, QuestionnaireVersion.id == UserAssignment.questionnaire_version_id)
+        .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)
+        .order_by(desc(UserAssignment.created_at))
+        .limit(1000)
+    )
+    if target_user_id:
+        stmt = stmt.where(UserAssignment.user_id == target_user_id)
+    if questionnaire_version_id:
+        stmt = stmt.where(UserAssignment.questionnaire_version_id == questionnaire_version_id)
+    if current_user.role == Role.ADMIN:
+        stmt = stmt.where(Questionnaire.owner_admin_id == current_user.id)
+
+    rows = db.execute(stmt).all()
+    return [
+        _to_assignment_out(assignment, user=user, version=version, questionnaire=questionnaire)
+        for assignment, user, version, questionnaire in rows
+    ]
+
+
+@router.post("/assignments", response_model=AssignmentOut)
+def create_or_update_assignment(
+    payload: AssignmentCreateRequest,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> AssignmentOut:
+    target_user = db.get(User, payload.target_user_id)
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target user not found")
+
+    version_row = db.execute(
+        select(QuestionnaireVersion, Questionnaire)
+        .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)
+        .where(QuestionnaireVersion.id == payload.questionnaire_version_id)
+    ).first()
+    if not version_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Questionnaire version not found")
+    version, questionnaire = version_row
+
+    if version.status != QuestionnaireVersionStatus.PUBLISHED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only published questionnaire versions can be assigned",
+        )
+
+    if current_user.role == Role.ADMIN and questionnaire.owner_admin_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins can only assign versions from their own questionnaires",
+        )
+
+    assignment = db.scalar(
+        select(UserAssignment)
+        .where(UserAssignment.user_id == target_user.id)
+        .where(UserAssignment.questionnaire_version_id == version.id)
+    )
+    if not assignment:
+        assignment = UserAssignment(
+            user_id=target_user.id,
+            questionnaire_version_id=version.id,
+            granted_by_id=current_user.id,
+            is_active=payload.is_active,
+        )
+        db.add(assignment)
+    else:
+        assignment.is_active = payload.is_active
+        assignment.granted_by_id = current_user.id
+
+    db.commit()
+    db.refresh(assignment)
+    return _to_assignment_out(assignment, user=target_user, version=version, questionnaire=questionnaire)
+
+
+@router.patch("/assignments/{assignment_id}", response_model=AssignmentOut)
+def update_assignment(
+    assignment_id: str,
+    payload: AssignmentUpdateRequest,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> AssignmentOut:
+    row = db.execute(
+        select(UserAssignment, User, QuestionnaireVersion, Questionnaire)
+        .join(User, User.id == UserAssignment.user_id)
+        .join(QuestionnaireVersion, QuestionnaireVersion.id == UserAssignment.questionnaire_version_id)
+        .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)
+        .where(UserAssignment.id == assignment_id)
+    ).first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+    assignment, target_user, version, questionnaire = row
+
+    if current_user.role == Role.ADMIN and questionnaire.owner_admin_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins can only manage assignments for their own questionnaires",
+        )
+
+    assignment.is_active = payload.is_active
+    assignment.granted_by_id = current_user.id
+    db.commit()
+    db.refresh(assignment)
+    return _to_assignment_out(assignment, user=target_user, version=version, questionnaire=questionnaire)

@@ -121,6 +121,30 @@ class AdminUpdateUserRequest(BaseModel):
     is_active: bool | None = None
 
 
+class AssignmentCreateRequest(BaseModel):
+    target_user_id: str = Field(min_length=1)
+    questionnaire_version_id: str = Field(min_length=1)
+    is_active: bool = True
+
+
+class AssignmentUpdateRequest(BaseModel):
+    is_active: bool
+
+
+class AssignmentOut(BaseModel):
+    id: str
+    user_id: str
+    username: str
+    user_role: Role
+    questionnaire_id: str
+    questionnaire_version_id: str
+    questionnaire_title: str
+    questionnaire_version_number: int
+    granted_by_id: str | None
+    is_active: bool
+    created_at: datetime
+
+
 class ChoiceCreate(BaseModel):
     position: int = Field(ge=1)
     label: str = Field(min_length=1, max_length=500)
@@ -227,6 +251,58 @@ class QuestionnaireDetailOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     versions: list[QuestionnaireVersionSummaryOut]
+
+
+class AssignedQuestionnaireOut(BaseModel):
+    questionnaire_id: str
+    questionnaire_version_id: str
+    title: str
+    description: str | None
+    version_number: int
+    instructions_markdown: str
+    assigned_at: datetime
+    question_count: int
+    submitted_at: datetime | None = None
+
+
+class ExistingAnswerOut(BaseModel):
+    question_id: str
+    value: Any
+
+
+class QuestionnaireForAnswerOut(BaseModel):
+    questionnaire_id: str
+    questionnaire_version_id: str
+    title: str
+    description: str | None
+    version_number: int
+    instructions_markdown: str
+    questions: list[QuestionOut]
+    existing_answers: list[ExistingAnswerOut] = Field(default_factory=list)
+
+
+class QuestionnaireConsentRequest(BaseModel):
+    consented: bool = True
+
+
+class QuestionnaireConsentOut(BaseModel):
+    questionnaire_version_id: str
+    consented: bool
+    consented_at: datetime | None = None
+
+
+class SubmitAnswerItem(BaseModel):
+    question_id: str = Field(min_length=1)
+    value: Any
+
+
+class SubmitQuestionnaireRequest(BaseModel):
+    answers: list[SubmitAnswerItem] = Field(default_factory=list)
+
+
+class SubmitQuestionnaireResponse(BaseModel):
+    response_id: str
+    submitted_at: datetime
 
 
 class AssetOut(BaseModel):

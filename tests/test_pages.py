@@ -72,6 +72,18 @@ def test_public_pages_and_route_guards() -> None:
         assert settings.status_code == 303
         assert settings.headers["location"] == "/login"
 
+        assigned = client.get("/assigned", follow_redirects=False)
+        assert assigned.status_code == 303
+        assert assigned.headers["location"] == "/login"
+
+        answer = client.get("/answer/fake-version", follow_redirects=False)
+        assert answer.status_code == 303
+        assert answer.headers["location"] == "/login"
+
+        consent = client.get("/answer/fake-version/consent", follow_redirects=False)
+        assert consent.status_code == 303
+        assert consent.headers["location"] == "/login"
+
         admin = client.get("/admin", follow_redirects=False)
         assert admin.status_code == 303
         assert admin.headers["location"] == "/questionnaires"
@@ -82,38 +94,53 @@ def test_public_pages_and_route_guards() -> None:
 
         me = client.get("/me", follow_redirects=False)
         assert me.status_code == 303
-        assert me.headers["location"] == "/settings"
+        assert me.headers["location"] == "/"
 
 
-def test_logged_in_regular_user_redirects_to_settings() -> None:
+def test_logged_in_regular_user_lands_on_assigned() -> None:
     with TestClient(app) as client:
         _signup(client, "alice")
 
         login = client.get("/login", follow_redirects=False)
         assert login.status_code == 303
-        assert login.headers["location"] == "/settings"
+        assert login.headers["location"] == "/assigned"
 
         signup = client.get("/signup", follow_redirects=False)
         assert signup.status_code == 303
-        assert signup.headers["location"] == "/settings"
+        assert signup.headers["location"] == "/assigned"
 
         admin_signup = client.get("/admin_signup", follow_redirects=False)
         assert admin_signup.status_code == 303
-        assert admin_signup.headers["location"] == "/settings"
+        assert admin_signup.headers["location"] == "/assigned"
 
         questionnaires = client.get("/questionnaires", follow_redirects=False)
         assert questionnaires.status_code == 303
-        assert questionnaires.headers["location"] == "/settings"
+        assert questionnaires.headers["location"] == "/assigned"
 
         users = client.get("/users", follow_redirects=False)
         assert users.status_code == 303
-        assert users.headers["location"] == "/settings"
+        assert users.headers["location"] == "/assigned"
+
+        assigned = client.get("/assigned")
+        assert assigned.status_code == 200
+        assert "Assigned Questionnaires" in assigned.text
+        assert "href=\"/assigned\"" in assigned.text
+        assert "href=\"/settings\"" in assigned.text
 
         settings = client.get("/settings")
         assert settings.status_code == 200
         assert "Settings" in settings.text
         assert "href=\"/questionnaires\"" not in settings.text
         assert "href=\"/users\"" not in settings.text
+        assert "href=\"/assigned\"" in settings.text
+
+        answer = client.get("/answer/fake-version", follow_redirects=False)
+        assert answer.status_code == 303
+        assert answer.headers["location"] == "/assigned"
+
+        consent = client.get("/answer/fake-version/consent", follow_redirects=False)
+        assert consent.status_code == 303
+        assert consent.headers["location"] == "/assigned"
 
 
 def test_superadmin_lands_on_questionnaires_with_expected_nav(test_session_factory) -> None:
@@ -131,6 +158,7 @@ def test_superadmin_lands_on_questionnaires_with_expected_nav(test_session_facto
         assert "Questionnaires" in questionnaires.text
         assert "href=\"/users\"" in questionnaires.text
         assert "href=\"/settings\"" in questionnaires.text
+        assert "href=\"/assigned\"" not in questionnaires.text
 
         users = client.get("/users")
         assert users.status_code == 200

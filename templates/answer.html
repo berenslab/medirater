@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="google" content="notranslate" />
+  <meta http-equiv="Content-Language" content="en" />
+  <title>Answer Questionnaire</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --panel: #ffffff;
+      --text: #1a2330;
+      --muted: #56657a;
+      --accent: #0a6c7e;
+      --border: #d7e1ea;
+      --ok: #1f7a45;
+      --err: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20px;
+    }
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.2rem; }
+    .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
+    nav { display: flex; gap: 10px; }
+    nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+    .content { padding: 14px; }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fcfdff;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    h2 { margin: 0 0 8px; font-size: 1rem; }
+    p { margin: 0 0 8px; }
+    .muted { color: var(--muted); }
+    .instructions {
+      white-space: pre-wrap;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+    }
+    .required { color: #b42318; }
+    .media-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .media-strip img {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f8fbff;
+    }
+    label.choice {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 4px 0;
+    }
+    textarea, input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      background: #fff;
+    }
+    textarea { min-height: 100px; resize: vertical; }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    button, a.button-link {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+      text-decoration: none;
+      display: inline-block;
+    }
+    button.secondary, a.button-link.secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .status { margin-top: 8px; min-height: 18px; font-size: 0.9rem; }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="header">
+      <div>
+        <h1>Answer Questionnaire</h1>
+        <div id="headline" class="meta">Loading questionnaire...</div>
+      </div>
+      <nav>
+        {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
+        {% if show_users_link %}<a href="/users">Users</a>{% endif %}
+        {% if show_assigned_link %}<a href="/assigned">Assigned</a>{% endif %}
+        {% if show_settings_link %}<a href="/settings">Settings</a>{% endif %}
+      </nav>
+    </section>
+
+    <section class="content">
+      <article class="card">
+        <h2 id="progress-title">Question</h2>
+        <div id="progress-meta" class="muted"></div>
+      </article>
+
+      <article class="card">
+        <h2>Instructions</h2>
+        <div id="instructions" class="instructions"></div>
+      </article>
+
+      <article class="card">
+        <h2 id="question-title">Loading...</h2>
+        <div id="question-root"></div>
+      </article>
+
+      <div class="row">
+        <button id="prev-btn" class="secondary" type="button">Previous</button>
+        <button id="next-btn" type="button">Next question</button>
+        <a class="button-link secondary" href="/assigned">Back to assigned</a>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+  </main>
+
+  <script>
+    const QUESTIONNAIRE_VERSION_ID = {{ questionnaire_version_id | tojson }};
+    const DRAFT_STORAGE_KEY = `medirator.answer.draft.${QUESTIONNAIRE_VERSION_ID}`;
+
+    const state = {
+      detail: null,
+      answersByQuestionId: new Map(),
+      currentQuestionIndex: 0,
+    };
+
+    function setStatus(message, ok) {
+      const el = document.getElementById("status");
+      el.className = ok ? "status ok" : "status err";
+      el.textContent = message || "";
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = {};
+      }
+      if (!response.ok) {
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      return data;
+    }
+
+    function clampQuestionIndex(index, total) {
+      if (total <= 0) return 0;
+      if (index < 0) return 0;
+      if (index >= total) return total - 1;
+      return index;
+    }
+
+    function getQuestionIndexFromUrl(total) {
+      const params = new URLSearchParams(window.location.search);
+      const qParam = Number.parseInt(params.get("q") || "1", 10);
+      const candidate = Number.isFinite(qParam) ? qParam - 1 : 0;
+      return clampQuestionIndex(candidate, total);
+    }
+
+    function moveToQuestionIndex(nextIndex) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("q", String(nextIndex + 1));
+      window.location.assign(url.toString());
+    }
+
+    function getReferencedAssetIds(question) {
+      const config = question.config || {};
+      const ids = [];
+      if (Array.isArray(config.stimulus_asset_ids)) {
+        for (const id of config.stimulus_asset_ids) {
+          if (typeof id === "string" && id) ids.push(id);
+        }
+      }
+      if (typeof config.patch_asset_id === "string" && config.patch_asset_id) {
+        ids.push(config.patch_asset_id);
+      }
+      return ids;
+    }
+
+    function loadDraftFromStorage() {
+      try {
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (!raw) return new Map();
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return new Map();
+        return new Map(Object.entries(parsed));
+      } catch (_error) {
+        return new Map();
+      }
+    }
+
+    function persistDraftToStorage() {
+      const payload = Object.fromEntries(state.answersByQuestionId.entries());
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    function readCurrentAnswerValue(question) {
+      if (question.question_type === "single_choice") {
+        const checked = document.querySelector(`input[name='q-${question.id}']:checked`);
+        if (!checked) return undefined;
+        return checked.value;
+      }
+
+      if (question.question_type === "multi_choice") {
+        const checks = Array.from(document.querySelectorAll(`input[name='q-${question.id}']:checked`));
+        const values = checks.map((input) => input.value);
+        if (!values.length) return undefined;
+        return values;
+      }
+
+      if (question.question_type === "short_text") {
+        const input = document.querySelector(`input[data-question-id='${question.id}']`);
+        const value = (input?.value || "").trim();
+        return value || undefined;
+      }
+
+      const textarea = document.querySelector(`textarea[data-question-id='${question.id}']`);
+      const value = (textarea?.value || "").trim();
+      return value || undefined;
+    }
+
+    function saveCurrentQuestionAnswer({ enforceRequired }) {
+      const question = state.detail.questions[state.currentQuestionIndex];
+      const value = readCurrentAnswerValue(question);
+
+      if (value === undefined) {
+        state.answersByQuestionId.delete(question.id);
+        persistDraftToStorage();
+        if (enforceRequired && question.is_required) {
+          throw new Error(`Question ${question.position} is required.`);
+        }
+        return;
+      }
+
+      state.answersByQuestionId.set(question.id, value);
+      persistDraftToStorage();
+    }
+
+    function validateAllRequiredAnswers() {
+      for (const question of state.detail.questions || []) {
+        if (!question.is_required) continue;
+        const value = state.answersByQuestionId.get(question.id);
+        if (value === undefined) {
+          throw new Error(`Question ${question.position} is required.`);
+        }
+        if (question.question_type === "multi_choice" && Array.isArray(value) && value.length === 0) {
+          throw new Error(`Question ${question.position} is required.`);
+        }
+        if ((question.question_type === "short_text" || question.question_type === "long_text") && typeof value === "string" && !value.trim()) {
+          throw new Error(`Question ${question.position} is required.`);
+        }
+      }
+    }
+
+    function buildSubmitAnswers() {
+      const answers = [];
+      for (const question of state.detail.questions || []) {
+        if (!state.answersByQuestionId.has(question.id)) continue;
+        answers.push({ question_id: question.id, value: state.answersByQuestionId.get(question.id) });
+      }
+      return answers;
+    }
+
+    function renderCurrentQuestion() {
+      const questions = state.detail.questions || [];
+      const total = questions.length;
+      const question = questions[state.currentQuestionIndex];
+
+      document.getElementById("headline").textContent = `${state.detail.title} v${state.detail.version_number}`;
+      document.getElementById("instructions").textContent = state.detail.instructions_markdown || "No instructions.";
+
+      if (!question) {
+        document.getElementById("progress-title").textContent = "No questions";
+        document.getElementById("progress-meta").textContent = "This questionnaire has no questions.";
+        document.getElementById("question-title").textContent = "No questions";
+        document.getElementById("question-root").innerHTML = "<p class='muted'>Nothing to answer.</p>";
+        document.getElementById("prev-btn").disabled = true;
+        document.getElementById("next-btn").disabled = true;
+        return;
+      }
+
+      document.getElementById("progress-title").textContent = `Question ${state.currentQuestionIndex + 1} of ${total}`;
+      document.getElementById("progress-meta").textContent = `Position ${question.position}`;
+      document.getElementById("question-title").innerHTML = `${question.position}. ${question.prompt_text}${question.is_required ? ' <span class="required">*</span>' : ''}`;
+
+      const root = document.getElementById("question-root");
+      root.innerHTML = "";
+
+      const assetIds = getReferencedAssetIds(question);
+      if (assetIds.length) {
+        const strip = document.createElement("div");
+        strip.className = "media-strip";
+        for (const assetId of assetIds) {
+          const img = document.createElement("img");
+          img.alt = `Question asset ${assetId}`;
+          img.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${assetId}/content`;
+          strip.appendChild(img);
+        }
+        root.appendChild(strip);
+      }
+
+      const existing = state.answersByQuestionId.get(question.id);
+
+      if (question.question_type === "single_choice") {
+        for (const choice of question.choices || []) {
+          const label = document.createElement("label");
+          label.className = "choice";
+          const input = document.createElement("input");
+          input.type = "radio";
+          input.name = `q-${question.id}`;
+          input.value = choice.value;
+          if (existing === choice.value) input.checked = true;
+          const span = document.createElement("span");
+          span.textContent = choice.label;
+          label.appendChild(input);
+          label.appendChild(span);
+          root.appendChild(label);
+        }
+      } else if (question.question_type === "multi_choice") {
+        const existingSet = Array.isArray(existing) ? new Set(existing) : new Set();
+        for (const choice of question.choices || []) {
+          const label = document.createElement("label");
+          label.className = "choice";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.name = `q-${question.id}`;
+          input.value = choice.value;
+          if (existingSet.has(choice.value)) input.checked = true;
+          const span = document.createElement("span");
+          span.textContent = choice.label;
+          label.appendChild(input);
+          label.appendChild(span);
+          root.appendChild(label);
+        }
+      } else if (question.question_type === "short_text") {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.dataset.questionId = question.id;
+        input.value = typeof existing === "string" ? existing : "";
+        root.appendChild(input);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.dataset.questionId = question.id;
+        textarea.value = typeof existing === "string" ? existing : "";
+        root.appendChild(textarea);
+      }
+
+      document.getElementById("prev-btn").disabled = state.currentQuestionIndex === 0;
+      document.getElementById("next-btn").textContent = state.currentQuestionIndex === total - 1
+        ? "Submit questionnaire"
+        : "Next question";
+    }
+
+    async function loadQuestionnaire() {
+      const detail = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}`);
+      state.detail = detail;
+
+      const existingAnswers = new Map((detail.existing_answers || []).map((item) => [item.question_id, item.value]));
+      const draftAnswers = loadDraftFromStorage();
+      state.answersByQuestionId = new Map(existingAnswers.entries());
+      for (const [questionId, value] of draftAnswers.entries()) {
+        state.answersByQuestionId.set(questionId, value);
+      }
+
+      state.currentQuestionIndex = getQuestionIndexFromUrl((detail.questions || []).length);
+      renderCurrentQuestion();
+    }
+
+    async function submitQuestionnaire() {
+      saveCurrentQuestionAnswer({ enforceRequired: true });
+      validateAllRequiredAnswers();
+
+      const answers = buildSubmitAnswers();
+      const submitted = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/responses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+      setStatus(`Submitted at ${submitted.submitted_at}. Redirecting...`, true);
+      setTimeout(() => {
+        window.location.assign("/assigned");
+      }, 500);
+    }
+
+    document.getElementById("prev-btn").addEventListener("click", () => {
+      try {
+        saveCurrentQuestionAnswer({ enforceRequired: false });
+        if (state.currentQuestionIndex > 0) {
+          moveToQuestionIndex(state.currentQuestionIndex - 1);
+        }
+      } catch (error) {
+        setStatus(error.message || String(error), false);
+      }
+    });
+
+    document.getElementById("next-btn").addEventListener("click", async () => {
+      try {
+        const total = (state.detail?.questions || []).length;
+        if (!total) {
+          setStatus("No questions available.", false);
+          return;
+        }
+
+        if (state.currentQuestionIndex === total - 1) {
+          await submitQuestionnaire();
+          return;
+        }
+
+        saveCurrentQuestionAnswer({ enforceRequired: true });
+        moveToQuestionIndex(state.currentQuestionIndex + 1);
+      } catch (error) {
+        setStatus(error.message || String(error), false);
+      }
+    });
+
+    loadQuestionnaire().catch((error) => {
+      setStatus(error.message || String(error), false);
+    });
+  </script>
+</body>
+</html>

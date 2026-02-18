@@ -60,6 +60,11 @@ class User(Base):
 
     passkeys: Mapped[list["PasskeyCredential"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     sessions: Mapped[list["SessionToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    questionnaire_consents: Mapped[list["QuestionnaireConsent"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    responses: Mapped[list["Response"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class PasskeyCredential(Base):
@@ -211,6 +216,30 @@ class QuestionnaireVersion(Base):
         back_populates="questionnaire_version",
         cascade="all, delete-orphan",
     )
+    consents: Mapped[list["QuestionnaireConsent"]] = relationship(back_populates="questionnaire_version")
+    responses: Mapped[list["Response"]] = relationship(back_populates="questionnaire_version")
+
+
+class QuestionnaireConsent(Base):
+    __tablename__ = "questionnaire_consents"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "questionnaire_version_id",
+            name="uq_questionnaire_consent_user_version",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    questionnaire_version_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("questionnaire_versions.id", ondelete="CASCADE"), index=True
+    )
+    consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User] = relationship(back_populates="questionnaire_consents")
+    questionnaire_version: Mapped[QuestionnaireVersion] = relationship(back_populates="consents")
 
 
 class Question(Base):
@@ -236,6 +265,7 @@ class Question(Base):
 
     questionnaire_version: Mapped[QuestionnaireVersion] = relationship(back_populates="questions")
     choices: Mapped[list["Choice"]] = relationship(back_populates="question", cascade="all, delete-orphan")
+    response_items: Mapped[list["ResponseItem"]] = relationship(back_populates="question")
 
 
 class Choice(Base):
@@ -271,3 +301,47 @@ class Asset(Base):
     sha256_hex: Mapped[str] = mapped_column(String(64), index=True)
     blob_data: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Response(Base):
+    __tablename__ = "responses"
+    __table_args__ = (
+        UniqueConstraint("user_id", "questionnaire_version_id", name="uq_response_user_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    questionnaire_version_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("questionnaire_versions.id", ondelete="CASCADE"), index=True
+    )
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user: Mapped[User] = relationship(back_populates="responses")
+    questionnaire_version: Mapped[QuestionnaireVersion] = relationship(back_populates="responses")
+    items: Mapped[list["ResponseItem"]] = relationship(
+        back_populates="response",
+        cascade="all, delete-orphan",
+    )
+
+
+class ResponseItem(Base):
+    __tablename__ = "response_items"
+    __table_args__ = (
+        UniqueConstraint("response_id", "question_id", name="uq_response_item_question"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    response_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("responses.id", ondelete="CASCADE"), index=True
+    )
+    question_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("questions.id", ondelete="CASCADE"), index=True
+    )
+    answer_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    response: Mapped[Response] = relationship(back_populates="items")
+    question: Mapped[Question] = relationship(back_populates="response_items")

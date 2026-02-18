@@ -1,0 +1,206 @@
+from fastapi.testclient import TestClient
+
+from app.config import get_settings
+from app.main import app
+from app.models import Role
+from app.services.token_service import issue_signup_token
+
+
+def _signup(client: TestClient, username: str, token: str | None = None) -> dict:
+    payload = {"username": username}
+    if token:
+        payload["token"] = token
+
+    begin = client.post("/api/auth/signup/begin", json=payload)
+    assert begin.status_code == 200
+
+    complete = client.post(
+        "/api/auth/signup/complete",
+        json={
+            "challenge_id": begin.json()["challenge_id"],
+            "credential": {
+                "id": f"cred-{username}-1",
+                "response": {"attestationObject": f"pk-{username}-1"},
+            },
+        },
+    )
+    assert complete.status_code == 200
+    return complete.json()
+
+
+def _login(client: TestClient, username: str) -> dict:
+    begin = client.post("/api/auth/login/begin", json={"username": username})
+    assert begin.status_code == 200
+
+    complete = client.post(
+        "/api/auth/login/complete",
+        json={
+            "challenge_id": begin.json()["challenge_id"],
+            "credential": {"id": f"cred-{username}-1"},
+        },
+    )
+    assert complete.status_code == 200
+    return complete.json()
+
+
+def _bootstrap_superadmin_token(test_session_factory) -> str:
+    settings = get_settings()
+    with test_session_factory() as db:
+        _, token = issue_signup_token(
+            db,
+            role=Role.SUPERADMIN,
+            created_by_id=None,
+            expires_in_minutes=60,
+            token_pepper=settings.token_pepper,
+        )
+        db.commit()
+        return token
+
+
+def _create_published_version(client: TestClient, title: str, owner_hint: str) -> str:
+    created = client.post(
+        "/api/admin/questionnaires",
+        json={"title": title, "description": None, "instructions_markdown": "instructions"},
+    )
+    assert created.status_code == 200
+    questionnaire_id = created.json()["id"]
+    version_id = created.json()["latest_version_id"]
+    assert version_id
+
+    question = client.post(
+        f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+        json={
+            "position": 1,
+            "prompt_text": f"{owner_hint}: free text answer",
+            "question_type": "short_text",
+            "is_required": True,
+            "config": {},
+            "choices": [],
+        },
+    )
+    assert question.status_code == 200
+
+    published = client.post(
+        f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+    )
+    assert published.status_code == 200
+    return version_id
+
+
+def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+
+        admin_a_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        )
+        assert admin_a_token.status_code == 200
+
+        admin_b_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        )
+        assert admin_b_token.status_code == 200
+
+        user_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={
+                "role": "user",
+                "expires_in_minutes": 60,
+                "questionnaire_version_ids": [],
+            },
+        )
+        assert user_token.status_code == 400
+
+        # Create open user and later assign directly.
+
+    with TestClient(app) as admin_a_client:
+        admin_a = _signup(admin_a_client, "admin_a", token=admin_a_token.json()["token"])
+        admin_a_id = admin_a["user"]["id"]
+        version_a = _create_published_version(admin_a_client, "A Questionnaire", "admin_a")
+
+    with TestClient(app) as admin_b_client:
+        admin_b = _signup(admin_b_client, "admin_b", token=admin_b_token.json()["token"])
+        admin_b_id = admin_b["user"]["id"]
+        version_b = _create_published_version(admin_b_client, "B Questionnaire", "admin_b")
+
+    with TestClient(app) as user_client:
+        user = _signup(user_client, "alice")
+        user_id = user["user"]["id"]
+
+    with TestClient(app) as admin_a_client:
+        _login(admin_a_client, "admin_a")
+
+        assign_admin_b_to_a = admin_a_client.post(
+            "/api/admin/assignments",
+            json={
+                "target_user_id": admin_b_id,
+                "questionnaire_version_id": version_a,
+                "is_active": True,
+            },
+        )
+        assert assign_admin_b_to_a.status_code == 200
+
+        forbidden_assign_foreign = admin_a_client.post(
+            "/api/admin/assignments",
+            json={
+                "target_user_id": user_id,
+                "questionnaire_version_id": version_b,
+                "is_active": True,
+            },
+        )
+        assert forbidden_assign_foreign.status_code == 403
+
+    with TestClient(app) as super_client:
+        _login(super_client, "root")
+
+        assign_admin_a_to_b = super_client.post(
+            "/api/admin/assignments",
+            json={
+                "target_user_id": admin_a_id,
+                "questionnaire_version_id": version_b,
+                "is_active": True,
+            },
+        )
+        assert assign_admin_a_to_b.status_code == 200
+
+        assign_user_to_b = super_client.post(
+            "/api/admin/assignments",
+            json={
+                "target_user_id": user_id,
+                "questionnaire_version_id": version_b,
+                "is_active": True,
+            },
+        )
+        assert assign_user_to_b.status_code == 200
+
+        assignments = super_client.get("/api/admin/assignments")
+        assert assignments.status_code == 200
+        assert len(assignments.json()) >= 3
+
+    with TestClient(app) as admin_a_client:
+        _login(admin_a_client, "admin_a")
+
+        own_access = admin_a_client.get(f"/api/user/questionnaires/{version_a}")
+        assert own_access.status_code == 200
+
+        assigned_access = admin_a_client.get(f"/api/user/questionnaires/{version_b}")
+        assert assigned_access.status_code == 200
+
+    with TestClient(app) as admin_b_client:
+        _login(admin_b_client, "admin_b")
+
+        assigned_access = admin_b_client.get(f"/api/user/questionnaires/{version_a}")
+        assert assigned_access.status_code == 200
+
+    with TestClient(app) as user_client:
+        _login(user_client, "alice")
+
+        assigned_access = user_client.get(f"/api/user/questionnaires/{version_b}")
+        assert assigned_access.status_code == 200
+
+        forbidden_unassigned = user_client.get(f"/api/user/questionnaires/{version_a}")
+        assert forbidden_unassigned.status_code == 404

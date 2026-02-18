@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="google" content="notranslate" />
+  <meta http-equiv="Content-Language" content="en" />
+  <title>Questionnaire Consent</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --panel: #ffffff;
+      --text: #1a2330;
+      --muted: #56657a;
+      --accent: #0a6c7e;
+      --border: #d7e1ea;
+      --ok: #1f7a45;
+      --err: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20px;
+    }
+    .container {
+      max-width: 920px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.2rem; }
+    .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
+    nav { display: flex; gap: 10px; }
+    nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+    .content { padding: 14px; }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fcfdff;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    h2 { margin: 0 0 8px; font-size: 1rem; }
+    .instructions {
+      white-space: pre-wrap;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+    }
+    .consent-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin-top: 8px;
+    }
+    button, a.button-link {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+      text-decoration: none;
+      display: inline-block;
+    }
+    a.button-link.secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .status { margin-top: 8px; min-height: 18px; font-size: 0.9rem; }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="header">
+      <div>
+        <h1>Questionnaire Consent</h1>
+        <div id="headline" class="meta">Loading questionnaire...</div>
+      </div>
+      <nav>
+        {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
+        {% if show_users_link %}<a href="/users">Users</a>{% endif %}
+        {% if show_assigned_link %}<a href="/assigned">Assigned</a>{% endif %}
+        {% if show_settings_link %}<a href="/settings">Settings</a>{% endif %}
+      </nav>
+    </section>
+
+    <section class="content">
+      <article class="card">
+        <h2>Instructions</h2>
+        <div id="instructions" class="instructions"></div>
+      </article>
+
+      <article class="card">
+        <h2>Consent</h2>
+        <p>
+          I confirm I understand this evaluation, I agree to submit my responses for this questionnaire version,
+          and I understand my responses are stored for analysis.
+        </p>
+        <label class="consent-row">
+          <input id="consent-check" type="checkbox" />
+          <span>I consent to proceed with this questionnaire.</span>
+        </label>
+        <div id="consent-note" class="meta"></div>
+      </article>
+
+      <div class="row">
+        <button id="continue-btn" type="button">Consent and start</button>
+        <a class="button-link secondary" href="/assigned">Back to assigned</a>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+  </main>
+
+  <script>
+    const QUESTIONNAIRE_VERSION_ID = {{ questionnaire_version_id | tojson }};
+    const state = { alreadyConsented: false };
+
+    function setStatus(message, ok) {
+      const el = document.getElementById("status");
+      el.className = ok ? "status ok" : "status err";
+      el.textContent = message || "";
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = {};
+      }
+      if (!response.ok) {
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      return data;
+    }
+
+    async function init() {
+      const detail = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}`);
+      document.getElementById("headline").textContent = `${detail.title} v${detail.version_number}`;
+      document.getElementById("instructions").textContent = detail.instructions_markdown || "No instructions.";
+
+      const consent = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/consent`);
+      state.alreadyConsented = consent.consented === true;
+      if (state.alreadyConsented) {
+        const check = document.getElementById("consent-check");
+        check.checked = true;
+        document.getElementById("consent-note").textContent = `Already consented at ${consent.consented_at}.`;
+        document.getElementById("continue-btn").textContent = "Continue to questions";
+      }
+    }
+
+    document.getElementById("continue-btn").addEventListener("click", async () => {
+      try {
+        const checked = document.getElementById("consent-check").checked;
+        if (!checked && !state.alreadyConsented) {
+          throw new Error("You must check consent to continue.");
+        }
+
+        if (!state.alreadyConsented) {
+          await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/consent`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ consented: true }),
+          });
+        }
+
+        window.location.assign(`/answer/${QUESTIONNAIRE_VERSION_ID}?q=1`);
+      } catch (error) {
+        setStatus(error.message || String(error), false);
+      }
+    });
+
+    init().catch((error) => {
+      setStatus(error.message || String(error), false);
+    });
+  </script>
+</body>
+</html>
