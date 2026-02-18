@@ -43,6 +43,16 @@
       gap: 12px;
       flex-wrap: wrap;
     }
+    .header-main {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    a.top-back {
+      padding: 6px 10px;
+      font-size: 0.84rem;
+    }
     h1 { margin: 0; font-size: 1.2rem; }
     .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
     nav { display: flex; gap: 10px; }
@@ -58,41 +68,60 @@
     h2 { margin: 0 0 8px; font-size: 1rem; }
     p { margin: 0 0 8px; }
     .muted { color: var(--muted); }
-    .instructions {
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px;
-      line-height: 1.5;
+    .instructions-inline {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.45;
     }
-    .instructions :first-child {
+    .instructions-inline-label {
+      margin-top: 10px;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .instructions-inline :first-child {
       margin-top: 0;
     }
-    .instructions :last-child {
+    .instructions-inline :last-child {
       margin-bottom: 0;
     }
-    .instructions p,
-    .instructions ul,
-    .instructions ol,
-    .instructions blockquote,
-    .instructions pre {
-      margin: 0 0 8px;
+    .instructions-inline p,
+    .instructions-inline ul,
+    .instructions-inline ol,
+    .instructions-inline li,
+    .instructions-inline blockquote,
+    .instructions-inline pre {
+      margin: 0 0 6px;
     }
-    .instructions code {
+    .instructions-inline h1,
+    .instructions-inline h2,
+    .instructions-inline h3,
+    .instructions-inline h4,
+    .instructions-inline h5,
+    .instructions-inline h6 {
+      margin: 0 0 6px;
+      font-size: 1em;
+      font-weight: 600;
+    }
+    .instructions-inline code {
       background: #eff4f8;
       border-radius: 4px;
       padding: 1px 4px;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 0.9em;
     }
-    .instructions pre {
+    .instructions-inline pre {
       background: #eff4f8;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px;
       overflow-x: auto;
     }
-    .instructions pre code {
+    .instructions-inline pre code {
       background: transparent;
       padding: 0;
     }
@@ -159,9 +188,12 @@
 <body>
   <main class="container">
     <section class="header">
-      <div>
-        <h1>Answer Questionnaire</h1>
-        <div id="headline" class="meta">Loading questionnaire...</div>
+      <div class="header-main">
+        <a class="button-link secondary top-back" href="/assigned">Back to assigned</a>
+        <div>
+          <h1>Answer Questionnaire</h1>
+          <div id="headline" class="meta">Loading questionnaire...</div>
+        </div>
       </div>
       <nav>
         {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
@@ -173,25 +205,16 @@
 
     <section class="content">
       <article class="card">
-        <h2 id="progress-title">Case</h2>
-        <div id="progress-meta" class="muted"></div>
-      </article>
-
-      <article class="card">
-        <h2>Instructions</h2>
-        <div id="instructions" class="instructions"></div>
-      </article>
-
-      <article class="card">
-        <h2 id="question-title">Loading...</h2>
+        <h2 id="progress-title">Loading...</h2>
         <div id="question-root"></div>
       </article>
 
       <div class="row">
         <button id="prev-btn" class="secondary" type="button">Previous</button>
         <button id="next-btn" type="button">Next case</button>
-        <a class="button-link secondary" href="/assigned">Back to assigned</a>
       </div>
+      <div class="instructions-inline-label">Instructions</div>
+      <div id="instructions" class="instructions-inline"></div>
       <div id="status" class="status"></div>
     </section>
   </main>
@@ -597,12 +620,13 @@
         return;
       }
 
-      for (const question of currentCase.questions) {
+      for (let index = 0; index < currentCase.questions.length; index += 1) {
+        const question = currentCase.questions[index];
         const value = readCurrentAnswerValue(question);
         if (value === undefined) {
           state.answersByQuestionId.delete(question.id);
           if (enforceRequired && question.is_required) {
-            throw new Error(`Question ${question.position} is required.`);
+            throw new Error(`Question ${index + 1} on this page is required.`);
           }
           continue;
         }
@@ -612,17 +636,26 @@
     }
 
     function validateAllRequiredAnswers() {
-      for (const question of state.detail.questions || []) {
-        if (!question.is_required) continue;
-        const value = state.answersByQuestionId.get(question.id);
-        if (value === undefined) {
-          throw new Error(`Question ${question.position} is required.`);
-        }
-        if (question.question_type === "multi_choice" && Array.isArray(value) && value.length === 0) {
-          throw new Error(`Question ${question.position} is required.`);
-        }
-        if ((question.question_type === "short_text" || question.question_type === "long_text") && typeof value === "string" && !value.trim()) {
-          throw new Error(`Question ${question.position} is required.`);
+      for (let caseIndex = 0; caseIndex < state.caseGroups.length; caseIndex += 1) {
+        const caseGroup = state.caseGroups[caseIndex];
+        for (let questionIndex = 0; questionIndex < caseGroup.questions.length; questionIndex += 1) {
+          const question = caseGroup.questions[questionIndex];
+          if (!question.is_required) continue;
+
+          const value = state.answersByQuestionId.get(question.id);
+          const errorMessage = caseIndex === state.currentCaseIndex
+            ? `Question ${questionIndex + 1} on this page is required.`
+            : `Case ${caseIndex + 1}, question ${questionIndex + 1} is required.`;
+
+          if (value === undefined) {
+            throw new Error(errorMessage);
+          }
+          if (question.question_type === "multi_choice" && Array.isArray(value) && value.length === 0) {
+            throw new Error(errorMessage);
+          }
+          if ((question.question_type === "short_text" || question.question_type === "long_text") && typeof value === "string" && !value.trim()) {
+            throw new Error(errorMessage);
+          }
         }
       }
     }
@@ -640,7 +673,7 @@
       const wrapper = document.createElement("section");
       wrapper.className = "card";
       wrapper.style.margin = "8px 0 0";
-      wrapper.innerHTML = `<h2>${question.position}. ${question.prompt_text}${question.is_required ? ' <span class="required">*</span>' : ''}</h2>`;
+      wrapper.innerHTML = `<h2>${question.prompt_text}${question.is_required ? ' <span class="required">*</span>' : ''}</h2>`;
 
       const existing = state.answersByQuestionId.get(question.id);
 
@@ -703,8 +736,6 @@
 
       if (!currentCase) {
         document.getElementById("progress-title").textContent = "No questions";
-        document.getElementById("progress-meta").textContent = "This questionnaire has no questions.";
-        document.getElementById("question-title").textContent = "No questions";
         document.getElementById("question-root").innerHTML = "<p class='muted'>Nothing to answer.</p>";
         document.getElementById("prev-btn").disabled = true;
         document.getElementById("next-btn").disabled = true;
@@ -712,8 +743,6 @@
       }
 
       document.getElementById("progress-title").textContent = `Case ${state.currentCaseIndex + 1} of ${total}`;
-      document.getElementById("progress-meta").textContent = `${currentCase.questions.length} question(s)`;
-      document.getElementById("question-title").textContent = `Case ${currentCase.case_key}`;
 
       const root = document.getElementById("question-root");
       root.innerHTML = "";
