@@ -3,7 +3,7 @@ from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -60,6 +60,16 @@ async def upload_assets(
         questionnaire_id=questionnaire_id.strip(),
         user=current_user,
     )
+
+    existing_count = db.scalar(
+        select(func.count(Asset.id)).where(Asset.questionnaire_id == questionnaire.id)
+    ) or 0
+    if existing_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This questionnaire already has assets. Delete all assets first to re-upload.",
+        )
+
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files uploaded")
 
@@ -141,6 +151,22 @@ def list_assets(
         stmt = stmt.where(Asset.owner_user_id == current_user.id)
     rows = db.execute(stmt).all()
     return [_to_asset_out(asset, owner_username=owner_username) for asset, owner_username in rows]
+
+
+@router.delete("/questionnaire/{questionnaire_id}")
+def delete_assets_for_questionnaire(
+    questionnaire_id: str,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    questionnaire = _get_accessible_questionnaire(
+        db,
+        questionnaire_id=questionnaire_id.strip(),
+        user=current_user,
+    )
+    db.execute(delete(Asset).where(Asset.questionnaire_id == questionnaire.id))
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/{asset_id}", response_model=AssetOut)

@@ -169,6 +169,20 @@
     }
 
     .small { font-size: 0.84rem; color: var(--muted); }
+    .bulk-template-card {
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      background: #f8fbfe;
+    }
+    .bulk-template-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
 
     @media (max-width: 980px) {
       .layout { grid-template-columns: 1fr; }
@@ -228,11 +242,14 @@
 
         <article class="card">
           <h2>Bulk dataset preset</h2>
-          <p class="muted">V1 default is OCT Task1-like triplets (`1a/1b/1c`).</p>
+          <p class="muted">Choose the file grouping rule that matches your uploaded filenames.</p>
 
           <label for="dataset-preset">Preset</label>
           <select id="dataset-preset">
-            <option value="oct_task1_triplet">OCT Task1 (triplet by suffix a/b/c)</option>
+            <option value="single_per_file">Single image per question (e.g. 1.png, 2.png)</option>
+            <option value="triplet_by_suffix">Triplet by suffix (e.g. 1a/1b/1c)</option>
+            <option value="paired_by_filename">Paired by folder+filename</option>
+            <option value="case_with_patches">Case with patches (img/patch folders)</option>
           </select>
 
           <label for="replace-existing">Replace existing questions when apply</label>
@@ -248,10 +265,10 @@
       <section class="stack">
         <article class="card">
           <h2>Bulk upload and generate (default)</h2>
-          <p class="muted">Upload images, select assets, then generate prompts in bulk.</p>
+          <p class="muted">Drop/select files to upload immediately. Uploaded files are selected by default.</p>
 
           <div id="dropzone" class="dropzone">
-            Drag files/folders here
+            Drag files/folders here to upload
             <div class="small">Click to select files. Shift+click to select a folder.</div>
           </div>
 
@@ -259,19 +276,15 @@
           <input id="picker-folder" type="file" webkitdirectory directory multiple style="display:none;" />
 
           <div class="row">
-            <button id="upload-btn">Upload staged files</button>
-            <button id="clear-staged-btn" class="ghost">Clear staged</button>
+            <button id="delete-assets-btn" class="ghost">Delete all assets</button>
             <button id="refresh-assets-btn" class="secondary">Refresh assets</button>
-            <button id="select-uploaded-btn" class="ghost">Select just-uploaded</button>
           </div>
           <div id="upload-status" class="status"></div>
-          <div id="staged-info" class="small"></div>
 
           <div class="scroll" style="margin-top:8px;">
             <table>
               <thead>
                 <tr>
-                  <th>Use</th>
                   <th>Name</th>
                   <th>Original path</th>
                 </tr>
@@ -280,30 +293,12 @@
             </table>
           </div>
 
-          <label for="bulk-prompt">Prompt template</label>
-          <textarea id="bulk-prompt" placeholder="Write your prompt template, e.g. Case {case_index}: ..."></textarea>
-
-          <label for="bulk-choices">Choices (label|value per line)</label>
-          <textarea id="bulk-choices" placeholder="example-a|a&#10;example-b|b"></textarea>
-
-          <div class="grid-2">
-            <div>
-              <label for="bulk-type">Question type</label>
-              <select id="bulk-type">
-                <option value="single_choice">single_choice</option>
-                <option value="multi_choice">multi_choice</option>
-                <option value="short_text">short_text</option>
-                <option value="long_text">long_text</option>
-              </select>
-            </div>
-            <div>
-              <label for="bulk-required">Required</label>
-              <select id="bulk-required">
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            </div>
+          <div class="row" style="justify-content:space-between;">
+            <strong style="font-size:0.9rem;">Question templates per case</strong>
+            <button id="add-bulk-template-btn" class="ghost" type="button">Add question template</button>
           </div>
+          <div id="bulk-template-list"></div>
+          <div class="small">Each template becomes one question for every generated case, in order.</div>
 
           <div class="row">
             <button id="preview-btn">Preview bulk generation</button>
@@ -389,12 +384,11 @@
       questionnaire: null,
       selectedVersionId: null,
       versionDetail: null,
-      stagedFiles: [],
       assets: [],
-      selectedAssetIds: new Set(),
-      latestUploadedIds: [],
       previewCases: [],
       selectedQuestionId: null,
+      isUploadingAssets: false,
+      bulkTemplateCounter: 0,
     };
 
     function setStatus(id, message, mode = "ok") {
@@ -432,6 +426,70 @@
 
     function choicesToText(choices) {
       return (choices || []).map((item) => `${item.label}|${item.value}`).join("\n");
+    }
+
+    function listBulkTemplateCards() {
+      return Array.from(document.querySelectorAll("[data-bulk-template-id]"));
+    }
+
+    function syncBulkTemplateRemoveButtons() {
+      const cards = listBulkTemplateCards();
+      const disableRemove = cards.length <= 1;
+      for (const button of document.querySelectorAll("[data-remove-bulk-template-id]")) {
+        button.disabled = disableRemove;
+      }
+    }
+
+    function addBulkTemplate(initial = {}) {
+      state.bulkTemplateCounter += 1;
+      const templateId = String(state.bulkTemplateCounter);
+      const promptTemplate = initial.prompt_template || "";
+      const choicesText = choicesToText(initial.choices || []);
+      const questionType = initial.question_type || "single_choice";
+      const required = initial.is_required === false ? "false" : "true";
+
+      const card = document.createElement("section");
+      card.className = "bulk-template-card";
+      card.setAttribute("data-bulk-template-id", templateId);
+      card.innerHTML = `
+        <div class="bulk-template-header">
+          <strong style="font-size:0.9rem;">Question template ${templateId}</strong>
+          <button type="button" class="ghost" data-remove-bulk-template-id="${templateId}">Remove</button>
+        </div>
+
+        <label>Prompt template</label>
+        <textarea data-field="prompt" placeholder="Write your prompt template, e.g. Case {case_index}: ...">${promptTemplate}</textarea>
+
+        <label>Choices (label|value per line)</label>
+        <textarea data-field="choices" placeholder="example-a|a&#10;example-b|b">${choicesText}</textarea>
+
+        <div class="grid-2">
+          <div>
+            <label>Question type</label>
+            <select data-field="type">
+              <option value="single_choice" ${questionType === "single_choice" ? "selected" : ""}>single_choice</option>
+              <option value="multi_choice" ${questionType === "multi_choice" ? "selected" : ""}>multi_choice</option>
+              <option value="short_text" ${questionType === "short_text" ? "selected" : ""}>short_text</option>
+              <option value="long_text" ${questionType === "long_text" ? "selected" : ""}>long_text</option>
+            </select>
+          </div>
+          <div>
+            <label>Required</label>
+            <select data-field="required">
+              <option value="true" ${required === "true" ? "selected" : ""}>true</option>
+              <option value="false" ${required === "false" ? "selected" : ""}>false</option>
+            </select>
+          </div>
+        </div>
+      `;
+
+      document.getElementById("bulk-template-list").appendChild(card);
+      const removeBtn = card.querySelector("[data-remove-bulk-template-id]");
+      removeBtn.addEventListener("click", () => {
+        card.remove();
+        syncBulkTemplateRemoveButtons();
+      });
+      syncBulkTemplateRemoveButtons();
     }
 
     function selectedVersionMeta() {
@@ -551,44 +609,19 @@
       tbody.innerHTML = "";
       if (!state.assets.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="3" class="muted">No assets uploaded.</td>';
+        tr.innerHTML = '<td colspan="2" class="muted">No assets uploaded.</td>';
         tbody.appendChild(tr);
         return;
       }
 
       for (const asset of state.assets) {
-        const checked = state.selectedAssetIds.has(asset.id) ? "checked" : "";
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td><input type="checkbox" data-asset-id="${asset.id}" ${checked}></td>
           <td>${asset.file_name}</td>
           <td>${asset.original_path || "-"}</td>
         `;
         tbody.appendChild(tr);
       }
-
-      for (const cb of document.querySelectorAll("[data-asset-id]")) {
-        cb.addEventListener("change", (event) => {
-          const assetId = event.currentTarget.getAttribute("data-asset-id");
-          if (!assetId) return;
-          if (event.currentTarget.checked) {
-            state.selectedAssetIds.add(assetId);
-          } else {
-            state.selectedAssetIds.delete(assetId);
-          }
-        });
-      }
-    }
-
-    function renderStagedInfo() {
-      const el = document.getElementById("staged-info");
-      if (!state.stagedFiles.length) {
-        el.textContent = "No staged files.";
-        return;
-      }
-      const sample = state.stagedFiles.slice(0, 4).map((item) => item.relativePath).join(", ");
-      const suffix = state.stagedFiles.length > 4 ? ` (+${state.stagedFiles.length - 4} more)` : "";
-      el.textContent = `Staged ${state.stagedFiles.length} files: ${sample}${suffix}`;
     }
 
     function renderPreview() {
@@ -603,7 +636,12 @@
       }
 
       for (const item of state.previewCases) {
-        const prompt = item.questions && item.questions[0] ? item.questions[0].prompt_text : "-";
+        const prompts = (item.questions || []).map((question) => question.prompt_text);
+        const prompt = prompts.length === 0
+          ? "-"
+          : prompts.length === 1
+            ? prompts[0]
+            : `${prompts[0]} | ${prompts[1]}${prompts.length > 2 ? ` | +${prompts.length - 2} more` : ""}`;
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${item.case_key}</td>
@@ -645,23 +683,60 @@
     async function loadAssets() {
       const items = await requestJson(`/api/admin/assets?limit=500&questionnaire_id=${encodeURIComponent(QUESTIONNAIRE_ID)}`);
       state.assets = items || [];
-      const valid = new Set(state.assets.map((item) => item.id));
-      for (const id of Array.from(state.selectedAssetIds)) {
-        if (!valid.has(id)) state.selectedAssetIds.delete(id);
-      }
       renderAssets();
     }
 
-    function stageFiles(files) {
+    async function uploadFiles(files) {
+      if (state.isUploadingAssets) {
+        setStatus("upload-status", "Upload already in progress.", "warn");
+        return;
+      }
+
+      const selectedFiles = [];
       for (const file of files) {
         if (!file || !file.size) continue;
         const relativePath = file.webkitRelativePath && file.webkitRelativePath.trim()
           ? file.webkitRelativePath.trim().replaceAll("\\", "/")
           : file.name;
-        state.stagedFiles.push({ file, relativePath });
+        selectedFiles.push({ file, relativePath });
       }
-      renderStagedInfo();
-      setStatus("upload-status", `Staged ${state.stagedFiles.length} files.`, "ok");
+      if (!selectedFiles.length) {
+        setStatus("upload-status", "No files selected.", "err");
+        return;
+      }
+
+      state.isUploadingAssets = true;
+      try {
+        const form = new FormData();
+        form.append("questionnaire_id", QUESTIONNAIRE_ID);
+        for (const item of selectedFiles) {
+          form.append("files", item.file, item.relativePath || item.file.name);
+          form.append("paths", item.relativePath || item.file.name);
+        }
+
+        const response = await fetch("/api/admin/assets/upload", {
+          method: "POST",
+          credentials: "include",
+          body: form,
+        });
+
+        let payload = [];
+        try {
+          payload = await response.json();
+        } catch (_error) {
+          payload = [];
+        }
+        if (!response.ok) {
+          throw new Error(payload.detail || `Upload failed (${response.status})`);
+        }
+
+        setStatus("upload-status", `Uploaded ${payload.length} files.`, "ok");
+        await loadAssets();
+      } catch (error) {
+        setStatus("upload-status", error.message || String(error), "err");
+      } finally {
+        state.isUploadingAssets = false;
+      }
     }
 
     function setupDropzone() {
@@ -699,30 +774,48 @@
       dz.addEventListener("drop", (event) => {
         event.preventDefault();
         dz.classList.remove("dragover");
-        stageFiles(Array.from(event.dataTransfer?.files || []));
+        void uploadFiles(Array.from(event.dataTransfer?.files || []));
       });
 
       filesPicker.addEventListener("change", (event) => {
-        stageFiles(Array.from(event.currentTarget.files || []));
+        void uploadFiles(Array.from(event.currentTarget.files || []));
         event.currentTarget.value = "";
       });
       folderPicker.addEventListener("change", (event) => {
-        stageFiles(Array.from(event.currentTarget.files || []));
+        void uploadFiles(Array.from(event.currentTarget.files || []));
         event.currentTarget.value = "";
       });
     }
 
     function getRecipeConfigForPreset() {
       const preset = document.getElementById("dataset-preset").value;
-      if (preset === "oct_task1_triplet") {
+      if (preset === "single_per_file") {
+        return {
+          recipe_type: "single_per_file",
+          recipe_config: {},
+        };
+      }
+      if (preset === "triplet_by_suffix") {
         return {
           recipe_type: "triplet_by_suffix",
           recipe_config: { suffixes: ["a", "b", "c"], strict: true },
         };
       }
+      if (preset === "paired_by_filename") {
+        return {
+          recipe_type: "paired_by_filename",
+          recipe_config: { left_folder: "no_support", right_folder: "with_support", strict: true },
+        };
+      }
+      if (preset === "case_with_patches") {
+        return {
+          recipe_type: "case_with_patches",
+          recipe_config: { img_folder: "img", patch_folder: "patch", strict: true },
+        };
+      }
       return {
-        recipe_type: "triplet_by_suffix",
-        recipe_config: { suffixes: ["a", "b", "c"], strict: true },
+        recipe_type: "single_per_file",
+        recipe_config: {},
       };
     }
 
@@ -730,41 +823,48 @@
       if (!selectedVersionIsDraft()) {
         throw new Error("Only draft versions are editable.");
       }
-      const assetIds = Array.from(state.selectedAssetIds);
+      const assetIds = state.assets.map((item) => item.id);
       if (!assetIds.length) {
-        throw new Error("Select at least one uploaded asset.");
+        throw new Error("Upload at least one asset first.");
       }
 
-      const promptTemplate = document.getElementById("bulk-prompt").value.trim();
-      if (!promptTemplate) {
-        throw new Error("Prompt template is required.");
+      const templateCards = listBulkTemplateCards();
+      if (!templateCards.length) {
+        throw new Error("Add at least one question template.");
       }
 
-      const questionType = document.getElementById("bulk-type").value;
-      const isRequired = document.getElementById("bulk-required").value === "true";
-      const parsedChoices = parseChoices(document.getElementById("bulk-choices").value);
+      const questionTemplates = templateCards.map((card, index) => {
+        const promptTemplate = card.querySelector("[data-field='prompt']")?.value.trim() || "";
+        if (!promptTemplate) {
+          throw new Error(`Prompt template is required for question template ${index + 1}.`);
+        }
 
-      if ((questionType === "single_choice" || questionType === "multi_choice") && parsedChoices.length === 0) {
-        throw new Error("Choice-based prompt requires choices.");
-      }
-      if ((questionType === "short_text" || questionType === "long_text") && parsedChoices.length > 0) {
-        throw new Error("Text prompt cannot include choices.");
-      }
+        const questionType = card.querySelector("[data-field='type']")?.value || "single_choice";
+        const isRequired = (card.querySelector("[data-field='required']")?.value || "true") === "true";
+        const parsedChoices = parseChoices(card.querySelector("[data-field='choices']")?.value || "");
+
+        if ((questionType === "single_choice" || questionType === "multi_choice") && parsedChoices.length === 0) {
+          throw new Error(`Choice-based template ${index + 1} requires choices.`);
+        }
+        if ((questionType === "short_text" || questionType === "long_text") && parsedChoices.length > 0) {
+          throw new Error(`Text template ${index + 1} cannot include choices.`);
+        }
+
+        return {
+          prompt_template: promptTemplate,
+          question_type: questionType,
+          is_required: isRequired,
+          choices: parsedChoices,
+          config: {},
+        };
+      });
 
       const recipe = getRecipeConfigForPreset();
       return {
         recipe_type: recipe.recipe_type,
         asset_ids: assetIds,
         recipe_config: recipe.recipe_config,
-        question_templates: [
-          {
-            prompt_template: promptTemplate,
-            question_type: questionType,
-            is_required: isRequired,
-            choices: parsedChoices,
-            config: {},
-          },
-        ],
+        question_templates: questionTemplates,
       };
     }
 
@@ -777,7 +877,9 @@
         setStatus("version-status", error.message || String(error), "err");
       }
 
-      renderStagedInfo();
+      if (!listBulkTemplateCards().length) {
+        addBulkTemplate();
+      }
       renderPreview();
       setupDropzone();
     }
@@ -793,6 +895,10 @@
       } catch (error) {
         setStatus("version-status", error.message || String(error), "err");
       }
+    });
+
+    document.getElementById("add-bulk-template-btn").addEventListener("click", () => {
+      addBulkTemplate();
     });
 
     document.getElementById("save-q-btn").addEventListener("click", async () => {
@@ -872,53 +978,6 @@
       window.location.assign(`/questionnaires/${QUESTIONNAIRE_ID}/responses`);
     });
 
-    document.getElementById("clear-staged-btn").addEventListener("click", () => {
-      state.stagedFiles = [];
-      renderStagedInfo();
-      setStatus("upload-status", "Cleared staged files.", "ok");
-    });
-
-    document.getElementById("upload-btn").addEventListener("click", async () => {
-      try {
-        if (!state.stagedFiles.length) {
-          throw new Error("No staged files to upload.");
-        }
-
-        const form = new FormData();
-        form.append("questionnaire_id", QUESTIONNAIRE_ID);
-        for (const item of state.stagedFiles) {
-          form.append("files", item.file, item.relativePath || item.file.name);
-          form.append("paths", item.relativePath || item.file.name);
-        }
-
-        const response = await fetch("/api/admin/assets/upload", {
-          method: "POST",
-          credentials: "include",
-          body: form,
-        });
-
-        let payload = [];
-        try {
-          payload = await response.json();
-        } catch (_error) {
-          payload = [];
-        }
-
-        if (!response.ok) {
-          throw new Error(payload.detail || `Upload failed (${response.status})`);
-        }
-
-        state.latestUploadedIds = (payload || []).map((item) => item.id);
-        state.selectedAssetIds = new Set(state.latestUploadedIds);
-        state.stagedFiles = [];
-        renderStagedInfo();
-        setStatus("upload-status", `Uploaded ${state.latestUploadedIds.length} files.`, "ok");
-        await loadAssets();
-      } catch (error) {
-        setStatus("upload-status", error.message || String(error), "err");
-      }
-    });
-
     document.getElementById("refresh-assets-btn").addEventListener("click", async () => {
       try {
         await loadAssets();
@@ -928,10 +987,18 @@
       }
     });
 
-    document.getElementById("select-uploaded-btn").addEventListener("click", () => {
-      state.selectedAssetIds = new Set(state.latestUploadedIds);
-      renderAssets();
-      setStatus("upload-status", `Selected ${state.latestUploadedIds.length} just-uploaded assets.`, "ok");
+    document.getElementById("delete-assets-btn").addEventListener("click", async () => {
+      const ok = window.confirm("Delete all assets for this questionnaire?");
+      if (!ok) {
+        return;
+      }
+      try {
+        await requestJson(`/api/admin/assets/questionnaire/${QUESTIONNAIRE_ID}`, { method: "DELETE" });
+        await loadAssets();
+        setStatus("upload-status", "All questionnaire assets deleted.", "ok");
+      } catch (error) {
+        setStatus("upload-status", error.message || String(error), "err");
+      }
     });
 
     document.getElementById("preview-btn").addEventListener("click", async () => {
@@ -948,11 +1015,21 @@
 
         state.previewCases = preview.cases || [];
         renderPreview();
-        setStatus("bulk-status", `Preview generated ${state.previewCases.length} cases.`, "ok");
+        const hasCases = state.previewCases.length > 0;
+        setStatus(
+          "bulk-status",
+          `Preview generated ${state.previewCases.length} cases.`,
+          hasCases ? "ok" : "warn",
+        );
+        const warningMessages = preview.warnings || [];
+        const hasSuffixMismatch = warningMessages.some((item) => item.includes("does not match suffix pattern"));
+        const hint = !hasCases && hasSuffixMismatch
+          ? " Hint: your files look like single images (e.g. 1.png). Use the 'Single image per question' preset."
+          : "";
         setStatus(
           "bulk-warnings",
-          (preview.warnings || []).length ? `Warnings: ${(preview.warnings || []).join(" | ")}` : "No warnings.",
-          (preview.warnings || []).length ? "warn" : "ok",
+          warningMessages.length ? `Warnings: ${warningMessages.join(" | ")}${hint}` : "No warnings.",
+          warningMessages.length ? "warn" : "ok",
         );
       } catch (error) {
         setStatus("bulk-status", error.message || String(error), "err");

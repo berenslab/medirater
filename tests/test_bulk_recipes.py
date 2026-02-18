@@ -93,6 +93,45 @@ def test_assets_are_scoped_to_questionnaire(test_session_factory) -> None:
         assert [item["id"] for item in list_q2.json()] == q2_asset_ids
 
 
+def test_questionnaire_assets_require_delete_before_reupload(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+
+        created = client.post(
+            "/api/admin/questionnaires",
+            json={"title": "Single upload", "description": None, "instructions_markdown": ""},
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+
+        first_upload = client.post(
+            "/api/admin/assets/upload",
+            data={"questionnaire_id": questionnaire_id},
+            files=[("files", ("A/001.png", PNG_BYTES, "image/png"))],
+        )
+        assert first_upload.status_code == 200
+
+        second_upload = client.post(
+            "/api/admin/assets/upload",
+            data={"questionnaire_id": questionnaire_id},
+            files=[("files", ("A/002.png", PNG_BYTES, "image/png"))],
+        )
+        assert second_upload.status_code == 400
+
+        deleted = client.delete(f"/api/admin/assets/questionnaire/{questionnaire_id}")
+        assert deleted.status_code == 200
+        assert deleted.json()["ok"] is True
+
+        upload_after_delete = client.post(
+            "/api/admin/assets/upload",
+            data={"questionnaire_id": questionnaire_id},
+            files=[("files", ("A/003.png", PNG_BYTES, "image/png"))],
+        )
+        assert upload_after_delete.status_code == 200
+
+
 def test_triplet_recipe_preview_and_apply(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 

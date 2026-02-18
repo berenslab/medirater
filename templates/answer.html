@@ -142,7 +142,7 @@
 
     <section class="content">
       <article class="card">
-        <h2 id="progress-title">Question</h2>
+        <h2 id="progress-title">Case</h2>
         <div id="progress-meta" class="muted"></div>
       </article>
 
@@ -158,7 +158,7 @@
 
       <div class="row">
         <button id="prev-btn" class="secondary" type="button">Previous</button>
-        <button id="next-btn" type="button">Next question</button>
+        <button id="next-btn" type="button">Next case</button>
         <a class="button-link secondary" href="/assigned">Back to assigned</a>
       </div>
       <div id="status" class="status"></div>
@@ -172,7 +172,8 @@
     const state = {
       detail: null,
       answersByQuestionId: new Map(),
-      currentQuestionIndex: 0,
+      caseGroups: [],
+      currentCaseIndex: 0,
     };
 
     function setStatus(message, ok) {
@@ -195,21 +196,21 @@
       return data;
     }
 
-    function clampQuestionIndex(index, total) {
+    function clampCaseIndex(index, total) {
       if (total <= 0) return 0;
       if (index < 0) return 0;
       if (index >= total) return total - 1;
       return index;
     }
 
-    function getQuestionIndexFromUrl(total) {
+    function getCaseIndexFromUrl(total) {
       const params = new URLSearchParams(window.location.search);
       const qParam = Number.parseInt(params.get("q") || "1", 10);
       const candidate = Number.isFinite(qParam) ? qParam - 1 : 0;
-      return clampQuestionIndex(candidate, total);
+      return clampCaseIndex(candidate, total);
     }
 
-    function moveToQuestionIndex(nextIndex) {
+    function moveToCaseIndex(nextIndex) {
       const url = new URL(window.location.href);
       url.searchParams.set("q", String(nextIndex + 1));
       window.location.assign(url.toString());
@@ -271,20 +272,57 @@
       return value || undefined;
     }
 
-    function saveCurrentQuestionAnswer({ enforceRequired }) {
-      const question = state.detail.questions[state.currentQuestionIndex];
-      const value = readCurrentAnswerValue(question);
+    function getCaseKey(question) {
+      const raw = String(question?.config?.case_key || "").trim();
+      if (raw) {
+        return raw;
+      }
+      return `question-${question.id}`;
+    }
 
-      if (value === undefined) {
-        state.answersByQuestionId.delete(question.id);
-        persistDraftToStorage();
-        if (enforceRequired && question.is_required) {
-          throw new Error(`Question ${question.position} is required.`);
+    function groupQuestionsIntoCases(questions) {
+      const byKey = new Map();
+      const ordered = [...(questions || [])].sort((a, b) => a.position - b.position);
+      for (const question of ordered) {
+        const caseKey = getCaseKey(question);
+        if (!byKey.has(caseKey)) {
+          byKey.set(caseKey, {
+            case_key: caseKey,
+            first_position: question.position,
+            questions: [],
+            asset_ids: [],
+          });
         }
+        const group = byKey.get(caseKey);
+        group.questions.push(question);
+
+        const assetIds = getReferencedAssetIds(question);
+        for (const assetId of assetIds) {
+          if (!group.asset_ids.includes(assetId)) {
+            group.asset_ids.push(assetId);
+          }
+        }
+      }
+      return Array.from(byKey.values()).sort((a, b) => a.first_position - b.first_position);
+    }
+
+    function saveCurrentCaseAnswers({ enforceRequired }) {
+      const currentCase = state.caseGroups[state.currentCaseIndex];
+      if (!currentCase) {
         return;
       }
 
-      state.answersByQuestionId.set(question.id, value);
+      for (const question of currentCase.questions) {
+        const value = readCurrentAnswerValue(question);
+        if (value === undefined) {
+          state.answersByQuestionId.delete(question.id);
+          if (enforceRequired && question.is_required) {
+            throw new Error(`Question ${question.position} is required.`);
+          }
+          continue;
+        }
+        state.answersByQuestionId.set(question.id, value);
+      }
       persistDraftToStorage();
     }
 
@@ -313,43 +351,11 @@
       return answers;
     }
 
-    function renderCurrentQuestion() {
-      const questions = state.detail.questions || [];
-      const total = questions.length;
-      const question = questions[state.currentQuestionIndex];
-
-      document.getElementById("headline").textContent = `${state.detail.title} v${state.detail.version_number}`;
-      document.getElementById("instructions").textContent = state.detail.instructions_markdown || "No instructions.";
-
-      if (!question) {
-        document.getElementById("progress-title").textContent = "No questions";
-        document.getElementById("progress-meta").textContent = "This questionnaire has no questions.";
-        document.getElementById("question-title").textContent = "No questions";
-        document.getElementById("question-root").innerHTML = "<p class='muted'>Nothing to answer.</p>";
-        document.getElementById("prev-btn").disabled = true;
-        document.getElementById("next-btn").disabled = true;
-        return;
-      }
-
-      document.getElementById("progress-title").textContent = `Question ${state.currentQuestionIndex + 1} of ${total}`;
-      document.getElementById("progress-meta").textContent = `Position ${question.position}`;
-      document.getElementById("question-title").innerHTML = `${question.position}. ${question.prompt_text}${question.is_required ? ' <span class="required">*</span>' : ''}`;
-
-      const root = document.getElementById("question-root");
-      root.innerHTML = "";
-
-      const assetIds = getReferencedAssetIds(question);
-      if (assetIds.length) {
-        const strip = document.createElement("div");
-        strip.className = "media-strip";
-        for (const assetId of assetIds) {
-          const img = document.createElement("img");
-          img.alt = `Question asset ${assetId}`;
-          img.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${assetId}/content`;
-          strip.appendChild(img);
-        }
-        root.appendChild(strip);
-      }
+    function renderQuestionInCase(root, question) {
+      const wrapper = document.createElement("section");
+      wrapper.className = "card";
+      wrapper.style.margin = "8px 0 0";
+      wrapper.innerHTML = `<h2>${question.position}. ${question.prompt_text}${question.is_required ? ' <span class="required">*</span>' : ''}</h2>`;
 
       const existing = state.answersByQuestionId.get(question.id);
 
@@ -366,7 +372,7 @@
           span.textContent = choice.label;
           label.appendChild(input);
           label.appendChild(span);
-          root.appendChild(label);
+          wrapper.appendChild(label);
         }
       } else if (question.question_type === "multi_choice") {
         const existingSet = Array.isArray(existing) ? new Set(existing) : new Set();
@@ -382,30 +388,75 @@
           span.textContent = choice.label;
           label.appendChild(input);
           label.appendChild(span);
-          root.appendChild(label);
+          wrapper.appendChild(label);
         }
       } else if (question.question_type === "short_text") {
         const input = document.createElement("input");
         input.type = "text";
         input.dataset.questionId = question.id;
         input.value = typeof existing === "string" ? existing : "";
-        root.appendChild(input);
+        wrapper.appendChild(input);
       } else {
         const textarea = document.createElement("textarea");
         textarea.dataset.questionId = question.id;
         textarea.value = typeof existing === "string" ? existing : "";
-        root.appendChild(textarea);
+        wrapper.appendChild(textarea);
       }
 
-      document.getElementById("prev-btn").disabled = state.currentQuestionIndex === 0;
-      document.getElementById("next-btn").textContent = state.currentQuestionIndex === total - 1
+      root.appendChild(wrapper);
+    }
+
+    function renderCurrentCase() {
+      const cases = state.caseGroups || [];
+      const total = cases.length;
+      const currentCase = cases[state.currentCaseIndex];
+
+      document.getElementById("headline").textContent = `${state.detail.title} v${state.detail.version_number}`;
+      document.getElementById("instructions").textContent = state.detail.instructions_markdown || "No instructions.";
+
+      if (!currentCase) {
+        document.getElementById("progress-title").textContent = "No questions";
+        document.getElementById("progress-meta").textContent = "This questionnaire has no questions.";
+        document.getElementById("question-title").textContent = "No questions";
+        document.getElementById("question-root").innerHTML = "<p class='muted'>Nothing to answer.</p>";
+        document.getElementById("prev-btn").disabled = true;
+        document.getElementById("next-btn").disabled = true;
+        return;
+      }
+
+      document.getElementById("progress-title").textContent = `Case ${state.currentCaseIndex + 1} of ${total}`;
+      document.getElementById("progress-meta").textContent = `${currentCase.questions.length} question(s)`;
+      document.getElementById("question-title").textContent = `Case ${currentCase.case_key}`;
+
+      const root = document.getElementById("question-root");
+      root.innerHTML = "";
+
+      if (currentCase.asset_ids.length) {
+        const strip = document.createElement("div");
+        strip.className = "media-strip";
+        for (const assetId of currentCase.asset_ids) {
+          const img = document.createElement("img");
+          img.alt = `Case asset ${assetId}`;
+          img.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${assetId}/content`;
+          strip.appendChild(img);
+        }
+        root.appendChild(strip);
+      }
+
+      for (const question of currentCase.questions) {
+        renderQuestionInCase(root, question);
+      }
+
+      document.getElementById("prev-btn").disabled = state.currentCaseIndex === 0;
+      document.getElementById("next-btn").textContent = state.currentCaseIndex === total - 1
         ? "Submit questionnaire"
-        : "Next question";
+        : "Next case";
     }
 
     async function loadQuestionnaire() {
       const detail = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}`);
       state.detail = detail;
+      state.caseGroups = groupQuestionsIntoCases(detail.questions || []);
 
       const existingAnswers = new Map((detail.existing_answers || []).map((item) => [item.question_id, item.value]));
       const draftAnswers = loadDraftFromStorage();
@@ -414,12 +465,12 @@
         state.answersByQuestionId.set(questionId, value);
       }
 
-      state.currentQuestionIndex = getQuestionIndexFromUrl((detail.questions || []).length);
-      renderCurrentQuestion();
+      state.currentCaseIndex = getCaseIndexFromUrl(state.caseGroups.length);
+      renderCurrentCase();
     }
 
     async function submitQuestionnaire() {
-      saveCurrentQuestionAnswer({ enforceRequired: true });
+      saveCurrentCaseAnswers({ enforceRequired: true });
       validateAllRequiredAnswers();
 
       const answers = buildSubmitAnswers();
@@ -438,9 +489,9 @@
 
     document.getElementById("prev-btn").addEventListener("click", () => {
       try {
-        saveCurrentQuestionAnswer({ enforceRequired: false });
-        if (state.currentQuestionIndex > 0) {
-          moveToQuestionIndex(state.currentQuestionIndex - 1);
+        saveCurrentCaseAnswers({ enforceRequired: false });
+        if (state.currentCaseIndex > 0) {
+          moveToCaseIndex(state.currentCaseIndex - 1);
         }
       } catch (error) {
         setStatus(error.message || String(error), false);
@@ -449,19 +500,19 @@
 
     document.getElementById("next-btn").addEventListener("click", async () => {
       try {
-        const total = (state.detail?.questions || []).length;
+        const total = (state.caseGroups || []).length;
         if (!total) {
           setStatus("No questions available.", false);
           return;
         }
 
-        if (state.currentQuestionIndex === total - 1) {
+        if (state.currentCaseIndex === total - 1) {
           await submitQuestionnaire();
           return;
         }
 
-        saveCurrentQuestionAnswer({ enforceRequired: true });
-        moveToQuestionIndex(state.currentQuestionIndex + 1);
+        saveCurrentCaseAnswers({ enforceRequired: true });
+        moveToCaseIndex(state.currentCaseIndex + 1);
       } catch (error) {
         setStatus(error.message || String(error), false);
       }
