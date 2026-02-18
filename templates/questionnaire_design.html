@@ -311,6 +311,11 @@
             step="1"
             placeholder="Blank or 0 = keep images visible"
           />
+          <div class="row">
+            <button id="apply-hide-to-existing-btn" class="secondary" type="button">
+              Apply hide setting to existing questions
+            </button>
+          </div>
 
           <div class="small">Manual mode is for editing existing prompts only. New prompts should come from bulk import.</div>
         </article>
@@ -563,6 +568,7 @@
       document.getElementById("save-instructions-btn").disabled = !isDraft;
       document.getElementById("preview-btn").disabled = !isDraft;
       document.getElementById("apply-btn").disabled = !isDraft;
+      document.getElementById("apply-hide-to-existing-btn").disabled = !isDraft;
       document.getElementById("save-edit-btn").disabled = !isDraft || !state.selectedQuestionId;
       document.getElementById("save-edit-bulk-btn").disabled = !isDraft || !state.selectedQuestionId;
       if (!isDraft) {
@@ -942,6 +948,18 @@
       };
     }
 
+    function parseStimulusHideSeconds() {
+      const hideSecondsInput = document.getElementById("stimulus-hide-seconds").value.trim();
+      if (!hideSecondsInput) {
+        return null;
+      }
+      const parsed = Number.parseInt(hideSecondsInput, 10);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error("Hide images after seconds must be a non-negative integer.");
+      }
+      return parsed > 0 ? parsed : null;
+    }
+
     function buildBulkPayload() {
       if (!selectedVersionIsDraft()) {
         throw new Error("Only draft versions are editable.");
@@ -956,17 +974,7 @@
         throw new Error("Add at least one question template.");
       }
 
-      const hideSecondsInput = document.getElementById("stimulus-hide-seconds").value.trim();
-      let hideSeconds = null;
-      if (hideSecondsInput) {
-        const parsed = Number.parseInt(hideSecondsInput, 10);
-        if (!Number.isFinite(parsed) || parsed < 0) {
-          throw new Error("Hide images after seconds must be a non-negative integer.");
-        }
-        if (parsed > 0) {
-          hideSeconds = parsed;
-        }
-      }
+      const hideSeconds = parseStimulusHideSeconds();
 
       const questionTemplates = templateCards.map((card, index) => {
         const promptTemplate = card.querySelector("[data-field='prompt']")?.value.trim() || "";
@@ -1198,6 +1206,59 @@
           "bulk-warnings",
           (applied.warnings || []).length ? `Warnings: ${(applied.warnings || []).join(" | ")}` : "No warnings.",
           (applied.warnings || []).length ? "warn" : "ok",
+        );
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("bulk-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("apply-hide-to-existing-btn").addEventListener("click", async () => {
+      try {
+        if (!selectedVersionIsDraft()) {
+          throw new Error("Only draft versions are editable.");
+        }
+        const questions = state.versionDetail?.questions || [];
+        if (!questions.length) {
+          throw new Error("No questions in this version.");
+        }
+        const hideSeconds = parseStimulusHideSeconds();
+
+        for (const question of questions) {
+          const config = { ...(question.config || {}) };
+          if (hideSeconds === null) {
+            delete config.stimulus_hide_after_seconds;
+          } else {
+            config.stimulus_hide_after_seconds = hideSeconds;
+          }
+
+          await requestJson(
+            `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/questions/${question.id}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                position: question.position,
+                prompt_text: question.prompt_text,
+                question_type: question.question_type,
+                is_required: question.is_required,
+                config,
+                choices: (question.choices || []).map((item, index) => ({
+                  position: index + 1,
+                  label: item.label,
+                  value: item.value,
+                })),
+              }),
+            },
+          );
+        }
+
+        setStatus(
+          "bulk-status",
+          hideSeconds === null
+            ? `Removed hide setting from ${questions.length} existing question(s).`
+            : `Applied hide setting (${hideSeconds}s) to ${questions.length} existing question(s).`,
+          "ok",
         );
         await loadVersionDetail();
       } catch (error) {

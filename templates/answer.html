@@ -138,6 +138,58 @@
       text-align: center;
       font-weight: 600;
     }
+    .magnifier-compact {
+      margin-top: 6px;
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+    }
+    .magnifier-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 0.82rem;
+      color: #334357;
+    }
+    .magnifier-controls label {
+      margin: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.82rem;
+      color: #334357;
+    }
+    .magnifier-controls input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+    }
+    .magnifier-controls input[type="range"] {
+      width: 130px;
+    }
+    .magnifier-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+    }
+    .magnifier-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .magnifier-canvas {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      display: block;
+    }
+    .magnifier-label {
+      font-size: 0.78rem;
+      color: #516173;
+      text-align: center;
+      line-height: 1.25;
+    }
     label.choice {
       display: flex;
       align-items: center;
@@ -747,6 +799,183 @@
       return answers;
     }
 
+    function createSynchronizedMagnifier({ mediaEntries, sourceImages }) {
+      const wrapper = document.createElement("section");
+      wrapper.className = "magnifier-compact";
+      wrapper.setAttribute("data-stimulus-item", "true");
+      wrapper.innerHTML = `
+        <div class="magnifier-controls">
+          <label>
+            <input type="checkbox" data-magnifier-enabled />
+            Magnifier
+          </label>
+          <label>
+            Size
+            <input type="range" min="60" max="260" step="10" value="110" data-magnifier-size />
+            <span data-magnifier-size-value>110px</span>
+          </label>
+          <label>
+            Zoom
+            <input type="range" min="1.2" max="8" step="0.1" value="2.0" data-magnifier-zoom />
+            <span data-magnifier-zoom-value>2.0x</span>
+          </label>
+        </div>
+        <div class="magnifier-strip" data-magnifier-strip></div>
+      `;
+
+      const enabledInput = wrapper.querySelector("[data-magnifier-enabled]");
+      const sizeSelect = wrapper.querySelector("[data-magnifier-size]");
+      const zoomSelect = wrapper.querySelector("[data-magnifier-zoom]");
+      const sizeValue = wrapper.querySelector("[data-magnifier-size-value]");
+      const zoomValue = wrapper.querySelector("[data-magnifier-zoom-value]");
+      const strip = wrapper.querySelector("[data-magnifier-strip]");
+      strip.style.display = "none";
+
+      const cells = [];
+      let lastNormX = 0.5;
+      let lastNormY = 0.5;
+      let hasPointer = false;
+      for (let index = 0; index < mediaEntries.length; index += 1) {
+        const entry = mediaEntries[index];
+        const sourceImage = sourceImages[index];
+        const cell = document.createElement("figure");
+        cell.className = "magnifier-cell";
+        cell.setAttribute("data-stimulus-item", "true");
+
+        const canvas = document.createElement("canvas");
+        canvas.className = "magnifier-canvas";
+        canvas.width = 90;
+        canvas.height = 90;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        const caption = document.createElement("figcaption");
+        caption.className = "magnifier-label";
+        caption.textContent = entry.label || "Image";
+
+        cell.appendChild(canvas);
+        cell.appendChild(caption);
+        strip.appendChild(cell);
+        cells.push({ canvas, ctx, sourceImage });
+      }
+
+      function applyCanvasSize() {
+        const size = Number.parseInt(sizeSelect.value || "90", 10);
+        const safeSize = Number.isFinite(size) && size > 0 ? size : 90;
+        sizeValue.textContent = `${safeSize}px`;
+        for (const cell of cells) {
+          cell.canvas.width = safeSize;
+          cell.canvas.height = safeSize;
+        }
+      }
+
+      function clearCanvases() {
+        for (const cell of cells) {
+          if (!cell.ctx) continue;
+          cell.ctx.clearRect(0, 0, cell.canvas.width, cell.canvas.height);
+          cell.ctx.fillStyle = "#ffffff";
+          cell.ctx.fillRect(0, 0, cell.canvas.width, cell.canvas.height);
+        }
+      }
+
+      function drawForNormalizedPosition(normX, normY) {
+        const zoom = Number.parseFloat(zoomSelect.value || "2");
+        const safeZoom = Number.isFinite(zoom) && zoom > 0 ? zoom : 2;
+        zoomValue.textContent = `${safeZoom.toFixed(1)}x`;
+
+        for (const cell of cells) {
+          if (!cell.ctx) continue;
+          const image = cell.sourceImage;
+          const width = image?.naturalWidth || image?.width || 0;
+          const height = image?.naturalHeight || image?.height || 0;
+          if (!width || !height) {
+            continue;
+          }
+
+          const sourceW = cell.canvas.width / safeZoom;
+          const sourceH = cell.canvas.height / safeZoom;
+          const centerX = normX * width;
+          const centerY = normY * height;
+
+          let sourceX = centerX - sourceW / 2;
+          let sourceY = centerY - sourceH / 2;
+          sourceX = Math.max(0, Math.min(width - sourceW, sourceX));
+          sourceY = Math.max(0, Math.min(height - sourceH, sourceY));
+
+          cell.ctx.clearRect(0, 0, cell.canvas.width, cell.canvas.height);
+          cell.ctx.fillStyle = "#ffffff";
+          cell.ctx.fillRect(0, 0, cell.canvas.width, cell.canvas.height);
+          cell.ctx.drawImage(
+            image,
+            sourceX,
+            sourceY,
+            sourceW,
+            sourceH,
+            0,
+            0,
+            cell.canvas.width,
+            cell.canvas.height,
+          );
+        }
+      }
+
+      function updateFromPointer(event, sourceImage) {
+        if (!enabledInput.checked) return;
+        const rect = sourceImage.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+
+        const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+        const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height));
+        lastNormX = x;
+        lastNormY = y;
+        hasPointer = true;
+        drawForNormalizedPosition(x, y);
+      }
+
+      for (const image of sourceImages) {
+        image.addEventListener("mouseenter", (event) => updateFromPointer(event, image));
+        image.addEventListener("mousemove", (event) => updateFromPointer(event, image));
+        image.addEventListener("mouseleave", () => clearCanvases());
+        image.addEventListener("touchmove", (event) => {
+          const touch = event.touches?.[0];
+          if (!touch) return;
+          updateFromPointer({ clientX: touch.clientX, clientY: touch.clientY }, image);
+        }, { passive: true });
+      }
+
+      enabledInput.addEventListener("change", () => {
+        strip.style.display = enabledInput.checked ? "grid" : "none";
+        if (!enabledInput.checked) {
+          clearCanvases();
+          hasPointer = false;
+        }
+      });
+      sizeSelect.addEventListener("input", () => {
+        applyCanvasSize();
+        if (enabledInput.checked && hasPointer) {
+          drawForNormalizedPosition(lastNormX, lastNormY);
+        } else {
+          clearCanvases();
+        }
+      });
+      zoomSelect.addEventListener("input", () => {
+        if (enabledInput.checked && hasPointer) {
+          drawForNormalizedPosition(lastNormX, lastNormY);
+        } else {
+          zoomValue.textContent = `${Number.parseFloat(zoomSelect.value || "2").toFixed(1)}x`;
+          clearCanvases();
+        }
+      });
+
+      applyCanvasSize();
+      zoomValue.textContent = `${Number.parseFloat(zoomSelect.value || "2").toFixed(1)}x`;
+      clearCanvases();
+      return wrapper;
+    }
+
     function renderQuestionInCase(root, question) {
       const wrapper = document.createElement("section");
       wrapper.className = "card";
@@ -829,16 +1058,21 @@
       if (currentCase.asset_ids.length) {
         const strip = document.createElement("div");
         strip.className = "media-strip";
+        const mediaEntries = [];
+        const sourceImages = [];
         for (const assetId of currentCase.asset_ids) {
           const item = document.createElement("figure");
           item.className = "media-item";
+          item.setAttribute("data-stimulus-item", "true");
 
           const img = document.createElement("img");
           img.alt = `Case asset ${assetId}`;
           img.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${assetId}/content`;
           item.appendChild(img);
+          sourceImages.push(img);
 
           const labelText = currentCase.asset_labels_by_id?.[assetId];
+          const label = typeof labelText === "string" && labelText.trim() ? labelText.trim() : "";
           if (typeof labelText === "string" && labelText.trim()) {
             const caption = document.createElement("figcaption");
             caption.className = "media-label";
@@ -846,9 +1080,14 @@
             item.appendChild(caption);
           }
 
+          mediaEntries.push({ src: img.src, label });
+
           strip.appendChild(item);
         }
         root.appendChild(strip);
+
+        const magnifierPanel = createSynchronizedMagnifier({ mediaEntries, sourceImages });
+        root.appendChild(magnifierPanel);
 
         const hideAfterSeconds = getCaseStimulusHideSeconds(currentCase);
         if (hideAfterSeconds !== null) {
@@ -859,8 +1098,8 @@
           root.appendChild(hideNote);
 
           state.stimulusHideTimerId = window.setTimeout(() => {
-            for (const img of strip.querySelectorAll("img")) {
-              img.style.visibility = "hidden";
+            for (const item of root.querySelectorAll("[data-stimulus-item]")) {
+              item.style.visibility = "hidden";
             }
             hideNote.textContent = "Images are hidden.";
             state.stimulusHideTimerId = null;
