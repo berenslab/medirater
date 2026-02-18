@@ -328,7 +328,6 @@
       try {
         const items = await requestJson("/api/admin/questionnaires");
         renderRows(items || []);
-        setStatus("list-status", `Loaded ${items.length} questionnaires.`, true);
       } catch (error) {
         renderRows([]);
         setStatus("list-status", error.message || String(error), false);

@@ -222,7 +222,6 @@
       try {
         state.users = await requestJson("/api/admin/users");
         renderUsers();
-        setStatus(`Loaded ${state.users.length} users.`, true);
       } catch (error) {
         state.users = [];
         renderUsers();
