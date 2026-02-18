@@ -232,6 +232,112 @@ def test_admin_can_set_and_clear_version_consent_text(test_session_factory) -> N
         assert version_detail_after.json()["consent_text"] is None
 
 
+def test_admin_can_unpublish_published_version_to_draft(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+        admin_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        ).json()["token"]
+
+    with TestClient(app) as admin_client:
+        _signup(admin_client, "designer", token=admin_token)
+
+        created = admin_client.post(
+            "/api/admin/questionnaires",
+            json={"title": "Unpublish Demo", "description": None, "instructions_markdown": ""},
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        question = admin_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+            json={
+                "position": 1,
+                "prompt_text": "Initial prompt",
+                "question_type": "single_choice",
+                "is_required": True,
+                "config": {},
+                "choices": [
+                    {"position": 1, "label": "Yes", "value": "yes"},
+                    {"position": 2, "label": "No", "value": "no"},
+                ],
+            },
+        )
+        assert question.status_code == 200
+
+        published = admin_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+        )
+        assert published.status_code == 200
+        assert published.json()["status"] == "published"
+
+        unpublished = admin_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/unpublish"
+        )
+        assert unpublished.status_code == 200
+        assert unpublished.json()["status"] == "draft"
+        assert unpublished.json()["published_at"] is None
+
+        mutate_after_unpublish = admin_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+            json={
+                "position": 2,
+                "prompt_text": "Editable again",
+                "question_type": "short_text",
+                "is_required": False,
+                "config": {},
+                "choices": [],
+            },
+        )
+        assert mutate_after_unpublish.status_code == 200
+
+
+def test_unpublish_fails_when_another_draft_exists(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+        admin_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        ).json()["token"]
+
+    with TestClient(app) as admin_client:
+        _signup(admin_client, "designer", token=admin_token)
+
+        created = admin_client.post(
+            "/api/admin/questionnaires",
+            json={"title": "Unpublish draft conflict", "description": None, "instructions_markdown": ""},
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        v1_id = created.json()["latest_version_id"]
+        assert v1_id
+
+        published = admin_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{v1_id}/publish"
+        )
+        assert published.status_code == 200
+
+        created_v2 = admin_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions",
+            json={"instructions_markdown": "new draft"},
+        )
+        assert created_v2.status_code == 200
+        assert created_v2.json()["status"] == "draft"
+
+        unpublish = admin_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{v1_id}/unpublish"
+        )
+        assert unpublish.status_code == 400
+        assert "already has a draft version" in unpublish.json()["detail"]
+
+
 def test_admin_ownership_enforced_and_superadmin_can_override(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 

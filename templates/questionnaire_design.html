@@ -563,8 +563,13 @@
     }
 
     function syncDraftControls() {
-      const isDraft = selectedVersionIsDraft();
-      document.getElementById("publish-btn").disabled = !isDraft;
+      const versionMeta = selectedVersionMeta();
+      const status = versionMeta?.status || "";
+      const isDraft = status === "draft";
+      const isPublished = status === "published";
+      const publishBtn = document.getElementById("publish-btn");
+      publishBtn.disabled = !(isDraft || isPublished);
+      publishBtn.textContent = isPublished ? "Unpublish" : "Publish draft";
       document.getElementById("save-instructions-btn").disabled = !isDraft;
       document.getElementById("preview-btn").disabled = !isDraft;
       document.getElementById("apply-btn").disabled = !isDraft;
@@ -1090,13 +1095,23 @@
 
     document.getElementById("publish-btn").addEventListener("click", async () => {
       try {
-        if (!selectedVersionIsDraft()) {
-          throw new Error("Only draft versions can be published.");
+        const versionMeta = selectedVersionMeta();
+        if (!versionMeta) {
+          throw new Error("Select a version first.");
         }
-        await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/publish`, {
-          method: "POST",
-        });
-        setStatus("version-status", "Draft published.", "ok");
+        if (versionMeta.status === "draft") {
+          await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/publish`, {
+            method: "POST",
+          });
+          setStatus("version-status", "Draft published.", "ok");
+        } else if (versionMeta.status === "published") {
+          await requestJson(`/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/unpublish`, {
+            method: "POST",
+          });
+          setStatus("version-status", "Version unpublished and moved to draft.", "ok");
+        } else {
+          throw new Error("Only draft or published versions can use this action.");
+        }
         await loadQuestionnaire();
         await loadVersionDetail();
       } catch (error) {

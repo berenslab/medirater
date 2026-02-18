@@ -1217,6 +1217,47 @@ def publish_questionnaire_version(
 
 
 @router.post(
+    "/{questionnaire_id}/versions/{version_id}/unpublish",
+    response_model=QuestionnaireVersionSummaryOut,
+)
+def unpublish_questionnaire_version(
+    questionnaire_id: str,
+    version_id: str,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> QuestionnaireVersionSummaryOut:
+    questionnaire = _get_accessible_questionnaire(
+        db, questionnaire_id=questionnaire_id, user=current_user
+    )
+    version = _get_version_for_questionnaire(db, questionnaire_id=questionnaire_id, version_id=version_id)
+    if version.status != QuestionnaireVersionStatus.PUBLISHED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only published versions can be unpublished",
+        )
+
+    existing_draft = db.scalar(
+        select(QuestionnaireVersion.id)
+        .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+        .where(QuestionnaireVersion.status == QuestionnaireVersionStatus.DRAFT)
+        .where(QuestionnaireVersion.id != version.id)
+    )
+    if existing_draft:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This questionnaire already has a draft version",
+        )
+
+    version.status = QuestionnaireVersionStatus.DRAFT
+    version.published_at = None
+    version.updated_at = utcnow()
+    questionnaire.updated_at = utcnow()
+    db.commit()
+    db.refresh(version)
+    return _to_version_summary_out(version)
+
+
+@router.post(
     "/{questionnaire_id}/versions/{version_id}/bulk-recipes/preview",
     response_model=BulkRecipePreviewResponse,
 )
