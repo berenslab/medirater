@@ -68,6 +68,7 @@ def test_user_can_open_assigned_questionnaire_and_submit_response(test_session_f
 
         uploaded = super_client.post(
             "/api/admin/assets/upload",
+            data={"questionnaire_id": questionnaire_id},
             files=[("files", ("Task1/1a.png", PNG_BYTES, "image/png"))],
         )
         assert uploaded.status_code == 200

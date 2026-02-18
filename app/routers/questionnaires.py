@@ -16,6 +16,7 @@ from app.models import (
     Choice,
     Question,
     QuestionType,
+    QuestionnaireConsent,
     Questionnaire,
     QuestionnaireVersion,
     QuestionnaireVersionStatus,
@@ -23,6 +24,7 @@ from app.models import (
     ResponseItem,
     Role,
     User,
+    UserAssignment,
     utcnow,
 )
 from app.schemas import (
@@ -301,12 +303,14 @@ def _get_accessible_assets(
     *,
     asset_ids: list[str],
     user: User,
+    questionnaire_id: str,
 ) -> list[Asset]:
     normalized_asset_ids = [item.strip() for item in asset_ids if item.strip()]
     if not normalized_asset_ids:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="asset_ids cannot be empty")
 
     stmt = select(Asset).where(Asset.id.in_(normalized_asset_ids))
+    stmt = stmt.where(Asset.questionnaire_id == questionnaire_id)
     if not _is_superadmin(user):
         stmt = stmt.where(Asset.owner_user_id == user.id)
     assets = db.execute(stmt).scalars().all()
@@ -770,6 +774,61 @@ def update_questionnaire(
     return _to_questionnaire_summary_out(questionnaire)
 
 
+@router.delete("/{questionnaire_id}")
+def delete_questionnaire(
+    questionnaire_id: str,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    questionnaire = _get_accessible_questionnaire(
+        db, questionnaire_id=questionnaire_id, user=current_user
+    )
+
+    version_ids = (
+        db.execute(
+            select(QuestionnaireVersion.id).where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+        )
+        .scalars()
+        .all()
+    )
+    if version_ids:
+        db.execute(
+            delete(UserAssignment).where(UserAssignment.questionnaire_version_id.in_(version_ids))
+        )
+        db.execute(
+            delete(QuestionnaireConsent).where(QuestionnaireConsent.questionnaire_version_id.in_(version_ids))
+        )
+
+        response_ids = (
+            db.execute(
+                select(Response.id).where(Response.questionnaire_version_id.in_(version_ids))
+            )
+            .scalars()
+            .all()
+        )
+        if response_ids:
+            db.execute(delete(ResponseItem).where(ResponseItem.response_id.in_(response_ids)))
+        db.execute(delete(Response).where(Response.questionnaire_version_id.in_(version_ids)))
+
+        question_ids = (
+            db.execute(
+                select(Question.id).where(Question.questionnaire_version_id.in_(version_ids))
+            )
+            .scalars()
+            .all()
+        )
+        if question_ids:
+            db.execute(delete(Choice).where(Choice.question_id.in_(question_ids)))
+        db.execute(delete(Question).where(Question.questionnaire_version_id.in_(version_ids)))
+
+        db.execute(delete(QuestionnaireVersion).where(QuestionnaireVersion.id.in_(version_ids)))
+
+    db.execute(delete(Asset).where(Asset.questionnaire_id == questionnaire.id))
+    db.delete(questionnaire)
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/{questionnaire_id}/versions", response_model=QuestionnaireVersionSummaryOut)
 def create_questionnaire_version(
     questionnaire_id: str,
@@ -1103,7 +1162,12 @@ def preview_bulk_recipe(
             detail="At least one question template or patch_question_template is required",
         )
 
-    assets = _get_accessible_assets(db, asset_ids=payload.asset_ids, user=current_user)
+    assets = _get_accessible_assets(
+        db,
+        asset_ids=payload.asset_ids,
+        user=current_user,
+        questionnaire_id=questionnaire_id,
+    )
     grouping_result = group_assets_for_recipe(
         recipe_type=payload.recipe_type,
         assets=assets,
@@ -1139,7 +1203,12 @@ def apply_bulk_recipe(
             detail="At least one question template or patch_question_template is required",
         )
 
-    assets = _get_accessible_assets(db, asset_ids=payload.asset_ids, user=current_user)
+    assets = _get_accessible_assets(
+        db,
+        asset_ids=payload.asset_ids,
+        user=current_user,
+        questionnaire_id=questionnaire_id,
+    )
     grouping_result = group_assets_for_recipe(
         recipe_type=payload.recipe_type,
         assets=assets,
@@ -1196,7 +1265,12 @@ def apply_bulk_recipe_preview(
 
     referenced_asset_ids = _collect_case_asset_ids(payload.cases)
     if referenced_asset_ids:
-        _get_accessible_assets(db, asset_ids=referenced_asset_ids, user=current_user)
+        _get_accessible_assets(
+            db,
+            asset_ids=referenced_asset_ids,
+            user=current_user,
+            questionnaire_id=questionnaire_id,
+        )
 
     created_questions = _persist_bulk_questions(
         db,

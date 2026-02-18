@@ -1,14 +1,14 @@
 import hashlib
 from pathlib import PurePosixPath
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import get_admin_user
-from app.models import Asset, Role, User
+from app.models import Asset, Questionnaire, Role, User
 from app.schemas import AssetOut
 
 router = APIRouter(prefix="/api/admin/assets", tags=["assets"])
@@ -16,6 +16,20 @@ router = APIRouter(prefix="/api/admin/assets", tags=["assets"])
 
 def _is_superadmin(user: User) -> bool:
     return user.role == Role.SUPERADMIN
+
+
+def _get_accessible_questionnaire(
+    db: Session,
+    *,
+    questionnaire_id: str,
+    user: User,
+) -> Questionnaire:
+    questionnaire = db.get(Questionnaire, questionnaire_id)
+    if not questionnaire:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Questionnaire not found")
+    if not _is_superadmin(user) and questionnaire.owner_admin_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Questionnaire access denied")
+    return questionnaire
 
 
 def _to_asset_out(asset: Asset, *, owner_username: str) -> AssetOut:
@@ -36,10 +50,16 @@ def _to_asset_out(asset: Asset, *, owner_username: str) -> AssetOut:
 @router.post("/upload", response_model=list[AssetOut])
 async def upload_assets(
     files: list[UploadFile] = File(...),
+    questionnaire_id: str = Form(...),
     paths: list[str] | None = Form(default=None),
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ) -> list[AssetOut]:
+    questionnaire = _get_accessible_questionnaire(
+        db,
+        questionnaire_id=questionnaire_id.strip(),
+        user=current_user,
+    )
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files uploaded")
 
@@ -71,6 +91,7 @@ async def upload_assets(
 
         asset = Asset(
             owner_user_id=current_user.id,
+            questionnaire_id=questionnaire.id,
             file_name=file_name,
             original_path=normalized_path,
             mime_type=uploaded.content_type or "application/octet-stream",
@@ -99,6 +120,7 @@ async def upload_assets(
 def list_assets(
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
+    questionnaire_id: str | None = Query(default=None),
     limit: int = 200,
 ) -> list[AssetOut]:
     bounded_limit = max(1, min(limit, 1000))
@@ -108,6 +130,13 @@ def list_assets(
         .order_by(desc(Asset.created_at))
         .limit(bounded_limit)
     )
+    if questionnaire_id:
+        questionnaire = _get_accessible_questionnaire(
+            db,
+            questionnaire_id=questionnaire_id.strip(),
+            user=current_user,
+        )
+        stmt = stmt.where(Asset.questionnaire_id == questionnaire.id)
     if not _is_superadmin(current_user):
         stmt = stmt.where(Asset.owner_user_id == current_user.id)
     rows = db.execute(stmt).all()

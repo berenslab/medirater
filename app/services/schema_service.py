@@ -63,3 +63,12 @@ def ensure_runtime_schema(engine: Engine) -> None:
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_questionnaires_slug_unique ON questionnaires (slug)"
         )
+
+        assets_table_info = conn.exec_driver_sql("PRAGMA table_info(assets)").fetchall()
+        if assets_table_info:
+            asset_column_names = {row[1] for row in assets_table_info}
+            if "questionnaire_id" not in asset_column_names:
+                conn.exec_driver_sql("ALTER TABLE assets ADD COLUMN questionnaire_id VARCHAR(36)")
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_assets_questionnaire_id ON assets (questionnaire_id)"
+            )

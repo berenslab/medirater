@@ -47,14 +47,50 @@ def _bootstrap_superadmin_token(test_session_factory) -> str:
         return token
 
 
-def _upload_assets(client: TestClient, relative_paths: list[str]) -> list[str]:
+def _upload_assets(client: TestClient, questionnaire_id: str, relative_paths: list[str]) -> list[str]:
     files = [
         ("files", (path, PNG_BYTES, "image/png"))
         for path in relative_paths
     ]
-    response = client.post("/api/admin/assets/upload", files=files)
+    response = client.post(
+        "/api/admin/assets/upload",
+        data={"questionnaire_id": questionnaire_id},
+        files=files,
+    )
     assert response.status_code == 200
     return [item["id"] for item in response.json()]
+
+
+def test_assets_are_scoped_to_questionnaire(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+
+        q1 = client.post(
+            "/api/admin/questionnaires",
+            json={"title": "Scoped A", "description": None, "instructions_markdown": ""},
+        )
+        assert q1.status_code == 200
+        q1_id = q1.json()["id"]
+
+        q2 = client.post(
+            "/api/admin/questionnaires",
+            json={"title": "Scoped B", "description": None, "instructions_markdown": ""},
+        )
+        assert q2.status_code == 200
+        q2_id = q2.json()["id"]
+
+        q1_asset_ids = _upload_assets(client, q1_id, ["A/001.png"])
+        q2_asset_ids = _upload_assets(client, q2_id, ["B/001.png"])
+
+        list_q1 = client.get(f"/api/admin/assets?questionnaire_id={q1_id}")
+        assert list_q1.status_code == 200
+        assert [item["id"] for item in list_q1.json()] == q1_asset_ids
+
+        list_q2 = client.get(f"/api/admin/assets?questionnaire_id={q2_id}")
+        assert list_q2.status_code == 200
+        assert [item["id"] for item in list_q2.json()] == q2_asset_ids
 
 
 def test_triplet_recipe_preview_and_apply(test_session_factory) -> None:
@@ -84,6 +120,7 @@ def test_triplet_recipe_preview_and_apply(test_session_factory) -> None:
 
         asset_ids = _upload_assets(
             client,
+            questionnaire_id,
             [
                 "Fundus/Task1/1a.png",
                 "Fundus/Task1/1b.png",
@@ -180,6 +217,7 @@ def test_case_with_patches_recipe_preview_and_apply(test_session_factory) -> Non
 
         asset_ids = _upload_assets(
             client,
+            questionnaire_id,
             [
                 "ERM_Macula/case-001/img/main.png",
                 "ERM_Macula/case-001/patch/p_1.png",
@@ -264,7 +302,7 @@ def test_apply_edited_preview_questions(test_session_factory) -> None:
         version_id = created.json()["latest_version_id"]
         assert version_id
 
-        asset_ids = _upload_assets(client, ["OCT/001a.png"])
+        asset_ids = _upload_assets(client, questionnaire_id, ["OCT/001a.png"])
         preview = client.post(
             f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/bulk-recipes/preview",
             json={

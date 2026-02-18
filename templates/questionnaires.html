@@ -55,10 +55,7 @@
     nav { display: flex; gap: 10px; }
     nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
     .content {
-      display: grid;
-      gap: 14px;
       padding: 14px;
-      grid-template-columns: 330px 1fr;
     }
     .card {
       border: 1px solid var(--border);
@@ -102,6 +99,26 @@
     button.secondary {
       background: #4d5f70;
     }
+    a.danger-link {
+      color: #b42318;
+      text-decoration: none;
+    }
+    a.danger-link:hover {
+      text-decoration: underline;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .toolbar-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
     .status {
       margin-top: 8px;
       min-height: 18px;
@@ -122,8 +139,42 @@
       vertical-align: top;
       word-break: break-word;
     }
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(19, 31, 45, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 1000;
+    }
+    .modal.hidden {
+      display: none;
+    }
+    .modal-card {
+      width: min(640px, 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 14px;
+    }
+    .modal-header {
+      margin-bottom: 8px;
+    }
+    .modal-header h2 {
+      margin: 0;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 10px;
+    }
     @media (max-width: 960px) {
-      .content { grid-template-columns: 1fr; }
+      .toolbar-actions {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -144,27 +195,12 @@
 
     <section class="content">
       <article class="card">
-        <h2>Create questionnaire</h2>
-        <label for="title">Title</label>
-        <input id="title" placeholder="e.g. OCT baseline" />
-
-        <label for="slug">Slug (optional)</label>
-        <input id="slug" placeholder="e.g. oct-baseline" />
-
-        <label for="description">Description</label>
-        <textarea id="description"></textarea>
-
-        <label for="instructions">Initial instructions</label>
-        <textarea id="instructions"></textarea>
-
-        <button id="create-btn">Create</button>
-        <div id="create-status" class="status"></div>
-      </article>
-
-      <article class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div class="toolbar">
           <h2 style="margin:0;">All accessible questionnaires</h2>
-          <button id="refresh-btn" class="secondary">Refresh</button>
+          <div class="toolbar-actions">
+            <button id="open-create-btn">Create Questionnaire</button>
+            <button id="refresh-btn" class="secondary">Refresh</button>
+          </div>
         </div>
         <div id="list-status" class="status"></div>
         <table>
@@ -181,8 +217,44 @@
       </article>
     </section>
   </main>
+  <div id="create-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="create-modal-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="create-modal-title">Create questionnaire</h2>
+      </div>
+
+      <label for="title">Title</label>
+      <input id="title" placeholder="e.g. OCT baseline" />
+
+      <label for="slug">Slug (optional)</label>
+      <input id="slug" placeholder="e.g. oct-baseline" />
+
+      <label for="description">Description</label>
+      <textarea id="description"></textarea>
+
+      <label for="instructions">Initial instructions</label>
+      <textarea id="instructions"></textarea>
+
+      <div id="create-status" class="status"></div>
+      <div class="modal-actions">
+        <button id="cancel-create-btn" class="secondary" type="button">Cancel</button>
+        <button id="create-btn" type="button">Create</button>
+      </div>
+    </div>
+  </div>
 
   <script>
+    function closeCreateModal() {
+      document.getElementById("create-modal").classList.add("hidden");
+    }
+
+    function openCreateModal() {
+      document.getElementById("create-status").textContent = "";
+      document.getElementById("create-status").className = "status";
+      document.getElementById("create-modal").classList.remove("hidden");
+      document.getElementById("title").focus();
+    }
+
     function setStatus(id, message, ok) {
       const el = document.getElementById(id);
       el.className = ok ? "status ok" : "status err";
@@ -227,9 +299,25 @@
           <td>${item.title}</td>
           <td>${item.owner_admin_username}</td>
           <td>${latest}</td>
-          <td><a href="/questionnaires/${item.id}/design">Design</a>${assignmentsLink}${responsesLink}${answerLink}</td>
+          <td><a href="/questionnaires/${item.id}/design">Design</a>${assignmentsLink}${responsesLink}${answerLink} | <a href="#" class="danger-link" data-delete-questionnaire-id="${item.id}">Delete</a></td>
         `;
         tbody.appendChild(tr);
+      }
+
+      for (const btn of tbody.querySelectorAll("[data-delete-questionnaire-id]")) {
+        btn.addEventListener("click", async (event) => {
+          event.preventDefault();
+          const questionnaireId = event.currentTarget.getAttribute("data-delete-questionnaire-id");
+          const ok = window.confirm("Delete this questionnaire and all related assets/answers?");
+          if (!ok) return;
+          try {
+            await requestJson(`/api/admin/questionnaires/${questionnaireId}`, { method: "DELETE" });
+            setStatus("list-status", "Questionnaire deleted.", true);
+            await loadQuestionnaires();
+          } catch (error) {
+            setStatus("list-status", error.message || String(error), false);
+          }
+        });
       }
     }
 
@@ -255,6 +343,19 @@
     }
 
     document.getElementById("refresh-btn").addEventListener("click", loadQuestionnaires);
+    document.getElementById("open-create-btn").addEventListener("click", openCreateModal);
+    document.getElementById("cancel-create-btn").addEventListener("click", closeCreateModal);
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      const modal = document.getElementById("create-modal");
+      if (!modal.classList.contains("hidden")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
 
     document.getElementById("create-btn").addEventListener("click", async () => {
       try {
@@ -282,6 +383,7 @@
         document.getElementById("slug").value = "";
         document.getElementById("description").value = "";
         document.getElementById("instructions").value = "";
+        closeCreateModal();
         await loadQuestionnaires();
       } catch (error) {
         setStatus("create-status", error.message || String(error), false);

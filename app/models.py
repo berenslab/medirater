@@ -297,6 +297,7 @@ class Asset(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     owner_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    questionnaire_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     file_name: Mapped[str] = mapped_column(String(255))
     original_path: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
     mime_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
