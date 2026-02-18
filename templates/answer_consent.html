@@ -473,7 +473,7 @@
           });
         }
 
-        window.location.assign(`/answer/${QUESTIONNAIRE_VERSION_ID}?q=1`);
+        window.location.assign(`/answer/${QUESTIONNAIRE_VERSION_ID}`);
       } catch (error) {
         setStatus(error.message || String(error), false);
       }

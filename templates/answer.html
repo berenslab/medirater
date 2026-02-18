@@ -504,9 +504,45 @@
 
     function getCaseIndexFromUrl(total) {
       const params = new URLSearchParams(window.location.search);
-      const qParam = Number.parseInt(params.get("q") || "1", 10);
-      const candidate = Number.isFinite(qParam) ? qParam - 1 : 0;
+      if (!params.has("q")) {
+        return null;
+      }
+      const raw = params.get("q");
+      const qParam = Number.parseInt(raw || "", 10);
+      if (!Number.isFinite(qParam)) {
+        return null;
+      }
+      const candidate = qParam - 1;
       return clampCaseIndex(candidate, total);
+    }
+
+    function isAnsweredValue(question, value) {
+      if (value === undefined || value === null) {
+        return false;
+      }
+      if (question.question_type === "multi_choice") {
+        return Array.isArray(value) && value.length > 0;
+      }
+      if (question.question_type === "short_text" || question.question_type === "long_text") {
+        return typeof value === "string" && value.trim().length > 0;
+      }
+      if (question.question_type === "single_choice") {
+        return typeof value === "string" && value.trim().length > 0;
+      }
+      return true;
+    }
+
+    function findFirstUnansweredCaseIndex(caseGroups, answersByQuestionId) {
+      for (let caseIndex = 0; caseIndex < caseGroups.length; caseIndex += 1) {
+        const caseGroup = caseGroups[caseIndex];
+        for (const question of caseGroup.questions) {
+          const value = answersByQuestionId.get(question.id);
+          if (!isAnsweredValue(question, value)) {
+            return caseIndex;
+          }
+        }
+      }
+      return 0;
     }
 
     function moveToCaseIndex(nextIndex) {
@@ -772,7 +808,15 @@
         state.answersByQuestionId.set(questionId, value);
       }
 
-      state.currentCaseIndex = getCaseIndexFromUrl(state.caseGroups.length);
+      const caseIndexFromUrl = getCaseIndexFromUrl(state.caseGroups.length);
+      if (caseIndexFromUrl !== null) {
+        state.currentCaseIndex = caseIndexFromUrl;
+      } else {
+        state.currentCaseIndex = findFirstUnansweredCaseIndex(
+          state.caseGroups,
+          state.answersByQuestionId,
+        );
+      }
       renderCurrentCase();
     }
 
