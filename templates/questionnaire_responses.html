@@ -248,6 +248,14 @@
         option.textContent = `v${version.version_number} (${version.status})`;
         select.appendChild(option);
       }
+
+      const latestVersion = (state.versions || []).reduce((latest, version) => {
+        if (!latest) return version;
+        return Number(version.version_number) > Number(latest.version_number) ? version : latest;
+      }, null);
+      if (latestVersion?.id) {
+        select.value = latestVersion.id;
+      }
     }
 
     function renderResponses() {
@@ -341,11 +349,13 @@
     function exportCsv() {
       try {
         const versionId = document.getElementById("version-filter").value;
+        if (!versionId) {
+          setStatus("list-status", "Select a specific version before exporting CSV.", false);
+          return;
+        }
         const query = new URLSearchParams();
-        if (versionId) query.set("version_id", versionId);
-        const url = query.toString()
-          ? `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/responses/export.csv?${query.toString()}`
-          : `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/responses/export.csv`;
+        query.set("version_id", versionId);
+        const url = `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/responses/export.csv?${query.toString()}`;
         window.location.assign(url);
       } catch (error) {
         setStatus("list-status", error.message || String(error), false);

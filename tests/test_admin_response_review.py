@@ -1,3 +1,6 @@
+import csv
+import io
+
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
@@ -92,6 +95,16 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
         assert questionnaire_id
         assert version_id
 
+        uploaded_asset = admin_a_client.post(
+            "/api/admin/assets/upload",
+            data={"questionnaire_id": questionnaire_id},
+            files=[("files", ("Task1/1.png", b"fake-image-bytes", "image/png"))],
+        )
+        assert uploaded_asset.status_code == 200
+        uploaded_asset_json = uploaded_asset.json()
+        assert len(uploaded_asset_json) == 1
+        asset_id = uploaded_asset_json[0]["id"]
+
         question = admin_a_client.post(
             f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
             json={
@@ -99,7 +112,10 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
                 "prompt_text": "How severe is this case?",
                 "question_type": "single_choice",
                 "is_required": True,
-                "config": {},
+                "config": {
+                    "case_key": "case-0001",
+                    "stimulus_asset_ids": [asset_id],
+                },
                 "choices": [
                     {"position": 1, "label": "Mild", "value": "mild"},
                     {"position": 2, "label": "Severe", "value": "severe"},
@@ -176,9 +192,15 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
         csv_body = exported_csv.text
         assert "questionnaire_title" in csv_body
         assert "username" in csv_body
-        assert "v1_q1" in csv_body
-        assert "alice" in csv_body
-        assert "severe" in csv_body
+        assert "v1_q1" not in csv_body
+        csv_rows = list(csv.DictReader(io.StringIO(csv_body)))
+        assert len(csv_rows) == 1
+        exported_row = csv_rows[0]
+        assert exported_row["username"] == "alice"
+        assert exported_row["answer_value"] == "severe"
+        assert exported_row["question_identifier"] == "c1q1"
+        assert exported_row["case_key"] == "case-0001"
+        assert exported_row["case_image_filenames"] == "Task1/1.png"
 
         exported_csv_filtered = admin_a_client.get(
             f"/api/admin/questionnaires/{questionnaire_id}/responses/export.csv?version_id={version_id}"

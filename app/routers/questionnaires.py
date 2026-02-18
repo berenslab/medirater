@@ -615,57 +615,82 @@ def export_questionnaire_responses_csv(
         db, questionnaire_id=questionnaire_id, user=current_user
     )
 
-    if version_id:
-        version_exists = db.scalar(
-            select(QuestionnaireVersion.id)
+    selected_version = (
+        db.scalar(
+            select(QuestionnaireVersion)
             .where(QuestionnaireVersion.id == version_id)
             .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
         )
-        if not version_exists:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Questionnaire version not found",
-            )
+        if version_id
+        else db.scalar(
+            select(QuestionnaireVersion)
+            .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+            .order_by(desc(QuestionnaireVersion.version_number))
+        )
+    )
+    if not selected_version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Questionnaire version not found",
+        )
 
-    response_stmt = (
-        select(Response, User, QuestionnaireVersion)
+    ordered_questions = db.execute(
+        select(Question)
+        .where(Question.questionnaire_version_id == selected_version.id)
+        .order_by(Question.position)
+    ).scalars().all()
+    case_index_by_key: dict[str, int] = {}
+    case_question_count_by_key: dict[str, int] = {}
+    case_question_identifier_by_question_id: dict[str, str] = {}
+    for question in ordered_questions:
+        config = _parse_json_object(question.config_json)
+        raw_case_key = str(config.get("case_key") or "").strip()
+        case_key = raw_case_key or f"question-{question.id}"
+        if case_key not in case_index_by_key:
+            case_index_by_key[case_key] = len(case_index_by_key) + 1
+            case_question_count_by_key[case_key] = 0
+        case_question_count_by_key[case_key] += 1
+        case_question_identifier_by_question_id[question.id] = (
+            f"c{case_index_by_key[case_key]}q{case_question_count_by_key[case_key]}"
+        )
+
+    item_rows = db.execute(
+        select(ResponseItem, Response, User, Question)
+        .join(Response, Response.id == ResponseItem.response_id)
         .join(User, User.id == Response.user_id)
-        .join(QuestionnaireVersion, QuestionnaireVersion.id == Response.questionnaire_version_id)
-        .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
-        .order_by(desc(Response.submitted_at))
-    )
-    if version_id:
-        response_stmt = response_stmt.where(Response.questionnaire_version_id == version_id)
-    response_rows = db.execute(response_stmt).all()
+        .join(Question, Question.id == ResponseItem.question_id)
+        .where(Response.questionnaire_version_id == selected_version.id)
+        .where(Question.questionnaire_version_id == selected_version.id)
+        .order_by(desc(Response.submitted_at), Response.id, Question.position)
+    ).all()
 
-    question_stmt = (
-        select(Question, QuestionnaireVersion.version_number)
-        .join(QuestionnaireVersion, QuestionnaireVersion.id == Question.questionnaire_version_id)
-        .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
-        .order_by(QuestionnaireVersion.version_number, Question.position)
-    )
-    if version_id:
-        question_stmt = question_stmt.where(Question.questionnaire_version_id == version_id)
-    question_rows = db.execute(question_stmt).all()
+    question_config_by_id: dict[str, dict] = {}
+    stimulus_asset_ids: set[str] = set()
+    for _, _, _, question in item_rows:
+        if question.id in question_config_by_id:
+            continue
+        config = _parse_json_object(question.config_json)
+        question_config_by_id[question.id] = config
+        raw_stimulus_ids = config.get("stimulus_asset_ids", [])
+        if not isinstance(raw_stimulus_ids, list):
+            continue
+        for raw_asset_id in raw_stimulus_ids:
+            if not isinstance(raw_asset_id, str):
+                continue
+            asset_id = raw_asset_id.strip()
+            if asset_id:
+                stimulus_asset_ids.add(asset_id)
 
-    question_columns: list[tuple[str, str]] = []
-    for question, version_number in question_rows:
-        question_columns.append((question.id, f"v{version_number}_q{question.position}"))
-
-    response_ids = [response.id for response, _, _ in response_rows]
-    answer_map: dict[tuple[str, str], str] = {}
-    answer_count_by_response_id: dict[str, int] = {}
-    if response_ids:
-        item_rows = db.execute(
-            select(ResponseItem)
-            .where(ResponseItem.response_id.in_(response_ids))
-        ).scalars().all()
-        for item in item_rows:
-            parsed_value = _parse_json_any(item.answer_json)
-            answer_map[(item.response_id, item.question_id)] = _stringify_answer_value(parsed_value)
-            answer_count_by_response_id[item.response_id] = (
-                answer_count_by_response_id.get(item.response_id, 0) + 1
-            )
+    asset_filename_by_id: dict[str, str] = {}
+    if stimulus_asset_ids:
+        asset_rows = db.execute(
+            select(Asset.id, Asset.original_path, Asset.file_name)
+            .where(Asset.id.in_(stimulus_asset_ids))
+        ).all()
+        for asset_id, original_path, file_name in asset_rows:
+            preferred_name = (original_path or "").strip() or (file_name or "").strip()
+            if preferred_name:
+                asset_filename_by_id[asset_id] = preferred_name
 
     fieldnames = [
         "response_id",
@@ -676,34 +701,62 @@ def export_questionnaire_responses_csv(
         "username",
         "user_role",
         "submitted_at",
-        "answer_count",
-        *[column_name for _, column_name in question_columns],
+        "case_key",
+        "question_identifier",
+        "case_image_filenames",
+        "question_id",
+        "question_position",
+        "question_prompt_text",
+        "question_type",
+        "answer_value",
     ]
 
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=fieldnames)
     writer.writeheader()
-    for response, user, version in response_rows:
-        row: dict[str, Any] = {
-            "response_id": response.id,
-            "questionnaire_id": questionnaire.id,
-            "questionnaire_title": questionnaire.title,
-            "questionnaire_version_id": version.id,
-            "questionnaire_version_number": version.version_number,
-            "username": user.username,
-            "user_role": user.role.value,
-            "submitted_at": response.submitted_at.isoformat(),
-            "answer_count": answer_count_by_response_id.get(response.id, 0),
-        }
-        for question_id, column_name in question_columns:
-            row[column_name] = answer_map.get((response.id, question_id), "")
-        writer.writerow(row)
 
-    filename = f"questionnaire-{questionnaire.id}-responses.csv"
-    if version_id:
-        version = db.get(QuestionnaireVersion, version_id)
-        if version:
-            filename = f"questionnaire-{questionnaire.id}-v{version.version_number}-responses.csv"
+    for item, response, user, question in item_rows:
+        config = question_config_by_id.get(question.id) or _parse_json_object(question.config_json)
+        case_key = str(config.get("case_key") or "").strip()
+        raw_stimulus_ids = config.get("stimulus_asset_ids", [])
+        case_filenames: list[str] = []
+        seen_case_filenames: set[str] = set()
+        if isinstance(raw_stimulus_ids, list):
+            for raw_asset_id in raw_stimulus_ids:
+                if not isinstance(raw_asset_id, str):
+                    continue
+                asset_id = raw_asset_id.strip()
+                if not asset_id:
+                    continue
+                filename = asset_filename_by_id.get(asset_id, asset_id)
+                if filename in seen_case_filenames:
+                    continue
+                seen_case_filenames.add(filename)
+                case_filenames.append(filename)
+
+        parsed_value = _parse_json_any(item.answer_json)
+        writer.writerow(
+            {
+                "response_id": response.id,
+                "questionnaire_id": questionnaire.id,
+                "questionnaire_title": questionnaire.title,
+                "questionnaire_version_id": selected_version.id,
+                "questionnaire_version_number": selected_version.version_number,
+                "username": user.username,
+                "user_role": user.role.value,
+                "submitted_at": response.submitted_at.isoformat(),
+                "case_key": case_key,
+                "question_identifier": case_question_identifier_by_question_id.get(question.id, ""),
+                "case_image_filenames": " | ".join(case_filenames),
+                "question_id": question.id,
+                "question_position": question.position,
+                "question_prompt_text": question.prompt_text,
+                "question_type": question.question_type.value,
+                "answer_value": _stringify_answer_value(parsed_value),
+            }
+        )
+
+    filename = f"questionnaire-{questionnaire.id}-v{selected_version.version_number}-responses.csv"
 
     return FastAPIResponse(
         content=buffer.getvalue(),
