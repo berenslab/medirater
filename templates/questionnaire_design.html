@@ -379,16 +379,23 @@
             </table>
           </div>
 
-          <div class="row" style="justify-content:space-between;">
-            <strong style="font-size:0.9rem;">Question templates per case</strong>
-            <button id="add-bulk-template-btn" class="ghost" type="button">Add question template</button>
+          <section id="case-template-section">
+            <div class="row" style="justify-content:space-between;">
+              <strong style="font-size:0.9rem;">Question templates per case</strong>
+              <button id="add-bulk-template-btn" class="ghost" type="button">Add question template</button>
+            </div>
+            <div id="bulk-template-list"></div>
+            <div id="case-template-help" class="small">
+              Each template becomes one question for every generated case, in order.
+            </div>
+          </section>
+          <div id="case-template-disabled-note" class="small hidden">
+            This recipe uses patch-only questions. Case-level templates are disabled.
           </div>
-          <div id="bulk-template-list"></div>
-          <div class="small">Each template becomes one question for every generated case, in order.</div>
 
           <section id="patch-template-panel" class="bulk-template-card hidden">
             <div class="bulk-template-header">
-              <strong style="font-size:0.9rem;">Per-patch question template (optional)</strong>
+              <strong id="patch-template-title" style="font-size:0.9rem;">Per-patch question template (optional)</strong>
             </div>
 
             <label for="patch-prompt-template">Prompt template</label>
@@ -415,7 +422,9 @@
                 </select>
               </div>
             </div>
-            <div class="small">Used only by recipes with patch assets. You can leave case-level templates empty and generate patch-only questions from this template.</div>
+            <div id="patch-template-help" class="small">
+              Used only by recipes with patch assets. You can leave case-level templates empty and generate patch-only questions from this template.
+            </div>
           </section>
 
           <label for="replace-existing">Replace existing questions when apply</label>
@@ -616,6 +625,14 @@
       return (state.recipes || []).find((item) => item.recipe_type === state.activeRecipeType) || null;
     }
 
+    function recipeAllowsCaseQuestionTemplates(recipeMeta) {
+      return !recipeMeta || recipeMeta.allows_case_question_templates !== false;
+    }
+
+    function recipeRequiresPatchQuestionTemplate(recipeMeta) {
+      return Boolean(recipeMeta && recipeMeta.requires_patch_question_template);
+    }
+
     function renderRecipeCatalog() {
       const catalog = document.getElementById("recipe-catalog");
       const empty = document.getElementById("recipe-empty");
@@ -673,14 +690,41 @@
 
     function syncPatchTemplatePanel() {
       const patchPanel = document.getElementById("patch-template-panel");
+      const patchTitle = document.getElementById("patch-template-title");
+      const patchHelp = document.getElementById("patch-template-help");
       const activeRecipe = activeRecipeMeta();
       const showPatchTemplate = Boolean(activeRecipe && activeRecipe.supports_patch_question_template);
+      const requiresPatchTemplate = recipeRequiresPatchQuestionTemplate(activeRecipe);
       patchPanel.classList.toggle("hidden", !showPatchTemplate);
+      patchTitle.textContent = requiresPatchTemplate
+        ? "Per-patch question template"
+        : "Per-patch question template (optional)";
+      patchHelp.textContent = requiresPatchTemplate
+        ? "Required for this recipe. Each patch becomes one question."
+        : "Used only by recipes with patch assets. You can leave case-level templates empty and generate patch-only questions from this template.";
       if (!showPatchTemplate) {
         document.getElementById("patch-prompt-template").value = "";
         document.getElementById("patch-choices").value = "";
         document.getElementById("patch-type").value = "single_choice";
         document.getElementById("patch-required").value = "true";
+      }
+    }
+
+    function syncCaseTemplateSection() {
+      const activeRecipe = activeRecipeMeta();
+      const showCaseTemplates = recipeAllowsCaseQuestionTemplates(activeRecipe);
+      const section = document.getElementById("case-template-section");
+      const disabledNote = document.getElementById("case-template-disabled-note");
+      section.classList.toggle("hidden", !showCaseTemplates);
+      disabledNote.classList.toggle("hidden", showCaseTemplates);
+
+      if (!showCaseTemplates) {
+        clearBulkTemplateCards();
+        return;
+      }
+
+      if (state.activeRecipeType && !listBulkTemplateCards().length) {
+        addBulkTemplate();
       }
     }
 
@@ -776,6 +820,7 @@
       document.getElementById("workspace-recipe-label").textContent = confirmed
         ? `Using recipe: ${confirmed.title}`
         : "";
+      syncCaseTemplateSection();
       syncPatchTemplatePanel();
       setRecipeConfigEmptyState();
       syncDraftControls();
@@ -1066,13 +1111,15 @@
 
     function prefillTemplateEditorsFromVersionDetail() {
       const { caseTemplates, patchTemplate, referenceConfig, hideSeconds } = extractTemplatePrefillFromVersionDetail();
+      const activeRecipe = activeRecipeMeta();
+      const allowCaseTemplates = recipeAllowsCaseQuestionTemplates(activeRecipe);
 
       clearBulkTemplateCards();
       if (caseTemplates.length) {
         for (const template of caseTemplates) {
           addBulkTemplate(template);
         }
-      } else {
+      } else if (allowCaseTemplates) {
         addBulkTemplate();
       }
 
@@ -1763,7 +1810,11 @@
       }
 
       const promptTemplate = document.getElementById("patch-prompt-template").value.trim();
+      const requiresPatchTemplate = recipeRequiresPatchQuestionTemplate(activeRecipe);
       if (!promptTemplate) {
+        if (requiresPatchTemplate) {
+          throw new Error("Per-patch question template prompt is required for this recipe.");
+        }
         return null;
       }
 
@@ -1800,38 +1851,45 @@
       }
 
       const activeRecipe = activeRecipeMeta();
+      const allowCaseTemplates = recipeAllowsCaseQuestionTemplates(activeRecipe);
+      const requiresPatchTemplate = recipeRequiresPatchQuestionTemplate(activeRecipe);
       const templateCards = listBulkTemplateCards();
       const hideSeconds = parseStimulusHideSeconds();
       const patchQuestionTemplate = buildPatchQuestionTemplate(hideSeconds);
 
       const questionTemplates = [];
-      for (let index = 0; index < templateCards.length; index += 1) {
-        const card = templateCards[index];
-        const promptTemplate = card.querySelector("[data-field='prompt']")?.value.trim() || "";
-        if (!promptTemplate) {
-          continue;
-        }
+      if (allowCaseTemplates) {
+        for (let index = 0; index < templateCards.length; index += 1) {
+          const card = templateCards[index];
+          const promptTemplate = card.querySelector("[data-field='prompt']")?.value.trim() || "";
+          if (!promptTemplate) {
+            continue;
+          }
 
-        const questionType = card.querySelector("[data-field='type']")?.value || "single_choice";
-        const isRequired = (card.querySelector("[data-field='required']")?.value || "true") === "true";
-        const parsedChoices = parseChoices(card.querySelector("[data-field='choices']")?.value || "");
+          const questionType = card.querySelector("[data-field='type']")?.value || "single_choice";
+          const isRequired = (card.querySelector("[data-field='required']")?.value || "true") === "true";
+          const parsedChoices = parseChoices(card.querySelector("[data-field='choices']")?.value || "");
 
-        if ((questionType === "single_choice" || questionType === "multi_choice") && parsedChoices.length === 0) {
-          throw new Error(`Choice-based template ${index + 1} requires choices.`);
-        }
-        if ((questionType === "short_text" || questionType === "long_text") && parsedChoices.length > 0) {
-          throw new Error(`Text template ${index + 1} cannot include choices.`);
-        }
+          if ((questionType === "single_choice" || questionType === "multi_choice") && parsedChoices.length === 0) {
+            throw new Error(`Choice-based template ${index + 1} requires choices.`);
+          }
+          if ((questionType === "short_text" || questionType === "long_text") && parsedChoices.length > 0) {
+            throw new Error(`Text template ${index + 1} cannot include choices.`);
+          }
 
-        questionTemplates.push({
-          prompt_template: promptTemplate,
-          question_type: questionType,
-          is_required: isRequired,
-          choices: parsedChoices,
-          config: hideSeconds === null ? {} : { stimulus_hide_after_seconds: hideSeconds },
-        });
+          questionTemplates.push({
+            prompt_template: promptTemplate,
+            question_type: questionType,
+            is_required: isRequired,
+            choices: parsedChoices,
+            config: hideSeconds === null ? {} : { stimulus_hide_after_seconds: hideSeconds },
+          });
+        }
       }
 
+      if (requiresPatchTemplate && !patchQuestionTemplate) {
+        throw new Error("Per-patch question template is required for this recipe.");
+      }
       if (!questionTemplates.length) {
         const canUsePatchOnly = Boolean(activeRecipe?.supports_patch_question_template && patchQuestionTemplate);
         if (!canUsePatchOnly) {
@@ -1859,7 +1917,7 @@
         setStatus("version-status", error.message || String(error), "err");
       }
 
-      if (!listBulkTemplateCards().length) {
+      if (recipeAllowsCaseQuestionTemplates(activeRecipeMeta()) && !listBulkTemplateCards().length) {
         addBulkTemplate();
       }
       renderPreview();
@@ -1880,6 +1938,10 @@
     });
 
     document.getElementById("add-bulk-template-btn").addEventListener("click", () => {
+      if (!recipeAllowsCaseQuestionTemplates(activeRecipeMeta())) {
+        setStatus("bulk-status", "Case-level templates are disabled for this recipe.", "warn");
+        return;
+      }
       addBulkTemplate();
     });
 

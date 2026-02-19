@@ -76,5 +76,7 @@ RECIPE = RegisteredBulkRecipe(
     config_keys=["img_folder", "patch_folder", "strict"],
     supports_patch_question_template=True,
     grouper=group_assets,
+    allows_case_question_templates=False,
+    requires_patch_question_template=True,
     catalog_order=40,
 )

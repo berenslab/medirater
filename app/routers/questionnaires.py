@@ -544,6 +544,8 @@ def list_bulk_recipe_catalog(
             example_paths=recipe.example_paths,
             config_keys=recipe.config_keys,
             supports_patch_question_template=recipe.supports_patch_question_template,
+            allows_case_question_templates=recipe.allows_case_question_templates,
+            requires_patch_question_template=recipe.requires_patch_question_template,
         )
         for recipe in list_bulk_recipes()
     ]

@@ -377,6 +377,8 @@ class BulkRecipeCatalogItemOut(BaseModel):
     example_paths: list[str] = Field(default_factory=list)
     config_keys: list[str] = Field(default_factory=list)
     supports_patch_question_template: bool = False
+    allows_case_question_templates: bool = True
+    requires_patch_question_template: bool = False
 
 
 class BulkTemplateChoice(BaseModel):

@@ -82,6 +82,8 @@ def test_bulk_recipe_catalog_lists_supported_recipes(test_session_factory) -> No
         assert by_type["indexed_suffix_sets"]["title"] == "Numbered Image Sets"
         assert by_type["indexed_suffix_sets"]["instructions"]
         assert by_type["case_with_patches"]["supports_patch_question_template"] is True
+        assert by_type["case_with_patches"]["allows_case_question_templates"] is False
+        assert by_type["case_with_patches"]["requires_patch_question_template"] is True
         assert by_type["case_with_patches"]["example_paths"]
 
         for recipe_type in by_type:

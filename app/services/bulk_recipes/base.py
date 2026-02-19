@@ -33,6 +33,8 @@ class RegisteredBulkRecipe:
     config_keys: list[str]
     supports_patch_question_template: bool
     grouper: Callable[[list[Asset], dict[str, Any]], GroupingResult]
+    allows_case_question_templates: bool = True
+    requires_patch_question_template: bool = False
     catalog_order: int = 1000
 
 
