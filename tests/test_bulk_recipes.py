@@ -61,6 +61,30 @@ def _upload_assets(client: TestClient, questionnaire_id: str, relative_paths: li
     return [item["id"] for item in response.json()]
 
 
+def test_bulk_recipe_catalog_lists_supported_recipes(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+        response = client.get("/api/admin/questionnaires/bulk-recipes/catalog")
+        assert response.status_code == 200
+        items = response.json()
+        assert isinstance(items, list)
+        assert len(items) >= 4
+
+        by_type = {item["recipe_type"]: item for item in items}
+        assert "indexed_suffix_sets" in by_type
+        assert "single_per_file" in by_type
+        assert "paired_by_filename" in by_type
+        assert "case_with_patches" in by_type
+        assert "triplet_by_suffix" not in by_type
+
+        assert by_type["indexed_suffix_sets"]["title"] == "Numbered Image Sets"
+        assert by_type["indexed_suffix_sets"]["instructions"]
+        assert by_type["case_with_patches"]["supports_patch_question_template"] is True
+        assert by_type["case_with_patches"]["example_paths"]
+
+
 def test_assets_are_scoped_to_questionnaire(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 

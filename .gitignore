@@ -1,6 +1,10 @@
 AGENTS.md
 
 *cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 .venv
 .env
 app.db

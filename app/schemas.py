@@ -370,9 +370,18 @@ class AssetOut(BaseModel):
 class BulkRecipeType(str, Enum):
     INDEXED_SUFFIX_SETS = "indexed_suffix_sets"
     SINGLE_PER_FILE = "single_per_file"
-    TRIPLET_BY_SUFFIX = "triplet_by_suffix"
     PAIRED_BY_FILENAME = "paired_by_filename"
     CASE_WITH_PATCHES = "case_with_patches"
+
+
+class BulkRecipeCatalogItemOut(BaseModel):
+    recipe_type: BulkRecipeType
+    title: str
+    summary: str
+    instructions: list[str] = Field(default_factory=list)
+    example_paths: list[str] = Field(default_factory=list)
+    config_keys: list[str] = Field(default_factory=list)
+    supports_patch_question_template: bool = False
 
 
 class BulkTemplateChoice(BaseModel):

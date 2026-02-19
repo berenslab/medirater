@@ -219,6 +219,59 @@
       gap: 8px;
       margin-bottom: 6px;
     }
+    .hidden {
+      display: none !important;
+    }
+    .recipe-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .recipe-card {
+      border: 1px solid #c7d6e3;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 10px;
+      cursor: pointer;
+      text-align: left;
+      margin-top: 0;
+      color: inherit;
+    }
+    .recipe-card h3 {
+      margin: 0 0 6px;
+      font-size: 0.95rem;
+      color: #0b2d45;
+    }
+    .recipe-card p {
+      margin: 0;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+    .recipe-card.active {
+      border-color: #0a6c7e;
+      box-shadow: 0 0 0 2px rgba(10, 108, 126, 0.15);
+      background: #f2fafc;
+    }
+    .recipe-detail {
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      background: #ffffff;
+      min-height: 48px;
+    }
+    .recipe-detail ul {
+      margin: 6px 0 0;
+      padding-left: 20px;
+    }
+    .recipe-config-panel {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+    }
 
     @media (max-width: 980px) {
       .grid-2 { grid-template-columns: 1fr; }
@@ -277,62 +330,85 @@
         </article>
 
         <article class="card">
-          <h2>Bulk dataset grouping</h2>
-          <p class="muted">Use numbered filenames: `1.png`, `2.png` or `1a.png`, `1b.png`, `2a.png`, `2b.png`.</p>
-
-          <label for="images-per-case">Images per case</label>
-          <input
-            id="images-per-case"
-            type="number"
-            min="1"
-            step="1"
-            placeholder="Auto-inferred from uploaded filenames"
-          />
-          <div id="images-per-case-hint" class="small">Will infer after upload.</div>
-
-          <label for="stimulus-slot-labels">Image labels per slot (optional)</label>
-          <input
-            id="stimulus-slot-labels"
-            placeholder="Original|Annotated or Better|Original|Worse"
-          />
-          <div class="small">If provided, number of labels must equal images per case.</div>
-
-          <label for="replace-existing">Replace existing questions when apply</label>
-          <select id="replace-existing">
-            <option value="false">false</option>
-            <option value="true">true</option>
-          </select>
-
-          <label for="stimulus-hide-seconds">Hide images after seconds (optional)</label>
-          <input
-            id="stimulus-hide-seconds"
-            type="number"
-            min="0"
-            step="1"
-            placeholder="Blank or 0 = keep images visible"
-          />
+          <h2>Recipe selection</h2>
+          <p class="muted">Choose and confirm one recipe before opening the bulk workspace.</p>
+          <div id="recipe-catalog" class="recipe-grid"></div>
+          <div id="recipe-empty" class="small">Loading recipe catalog...</div>
+          <div id="recipe-detail" class="recipe-detail"></div>
           <div class="row">
-            <button id="apply-hide-to-existing-btn" class="secondary" type="button">
-              Apply hide setting to existing questions
-            </button>
+            <button id="confirm-recipe-btn" class="secondary" type="button" disabled>Confirm recipe</button>
           </div>
-
-          <div class="small">Manual mode is for editing existing prompts only. New prompts should come from bulk import.</div>
+          <div id="recipe-status" class="status"></div>
         </article>
       </section>
 
       <section class="stack">
-        <article class="card">
-          <h2>Bulk upload and generate (default)</h2>
+        <article id="bulk-workspace-card" class="card hidden">
+          <h2>Recipe workspace</h2>
+          <p id="workspace-recipe-label" class="muted"></p>
+          <div class="row">
+            <button id="change-recipe-btn" class="ghost" type="button">Change recipe</button>
+          </div>
+
+          <div data-config-for="indexed_suffix_sets" class="recipe-config-panel hidden">
+            <label for="images-per-case">Images per case</label>
+            <input
+              id="images-per-case"
+              type="number"
+              min="1"
+              step="1"
+              placeholder="Auto-inferred from uploaded filenames"
+            />
+            <div id="images-per-case-hint" class="small">Will infer after upload.</div>
+
+            <label for="stimulus-slot-labels">Image labels per slot (optional)</label>
+            <input
+              id="stimulus-slot-labels"
+              placeholder="Original|Annotated or Better|Original|Worse"
+            />
+            <div class="small">If provided, number of labels must equal images per case.</div>
+          </div>
+
+          <div data-config-for="single_per_file" class="recipe-config-panel hidden">
+            <div class="small">No extra grouping options for this recipe.</div>
+          </div>
+
+          <div data-config-for="paired_by_filename" class="recipe-config-panel hidden">
+            <label for="paired-left-folder">Left folder</label>
+            <input id="paired-left-folder" placeholder="no_support" />
+
+            <label for="paired-right-folder">Right folder</label>
+            <input id="paired-right-folder" placeholder="with_support" />
+
+            <label for="paired-strict">Strict mode</label>
+            <select id="paired-strict">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </div>
+
+          <div data-config-for="case_with_patches" class="recipe-config-panel hidden">
+            <label for="case-img-folder">Main image folder</label>
+            <input id="case-img-folder" placeholder="img" />
+
+            <label for="case-patch-folder">Patch folder</label>
+            <input id="case-patch-folder" placeholder="patch" />
+
+            <label for="case-patch-strict">Strict mode</label>
+            <select id="case-patch-strict">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </div>
+
           <p class="muted">Drop/select files to upload immediately. Uploaded files are selected by default.</p>
 
           <div id="dropzone" class="dropzone">
             Drag files/folders here to upload
-            <div class="small">Click to select files. Shift+click to select a folder.</div>
+            <div class="small">Click to select files.</div>
           </div>
 
           <input id="picker-files" type="file" multiple style="display:none;" />
-          <input id="picker-folder" type="file" webkitdirectory directory multiple style="display:none;" />
 
           <div class="row">
             <button id="delete-assets-btn" class="ghost">Delete all assets</button>
@@ -358,6 +434,58 @@
           </div>
           <div id="bulk-template-list"></div>
           <div class="small">Each template becomes one question for every generated case, in order.</div>
+
+          <section id="patch-template-panel" class="bulk-template-card hidden">
+            <div class="bulk-template-header">
+              <strong style="font-size:0.9rem;">Per-patch question template (optional)</strong>
+            </div>
+
+            <label for="patch-prompt-template">Prompt template</label>
+            <textarea id="patch-prompt-template" placeholder="Example: Patch {patch_index}/{patch_total}: ..."></textarea>
+
+            <label for="patch-choices">Choices (label|value per line)</label>
+            <textarea id="patch-choices" placeholder="yes|yes&#10;no|no&#10;unsure|unsure"></textarea>
+
+            <div class="grid-2">
+              <div>
+                <label for="patch-type">Question type</label>
+                <select id="patch-type">
+                  <option value="single_choice">single_choice</option>
+                  <option value="multi_choice">multi_choice</option>
+                  <option value="short_text">short_text</option>
+                  <option value="long_text">long_text</option>
+                </select>
+              </div>
+              <div>
+                <label for="patch-required">Required</label>
+                <select id="patch-required">
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              </div>
+            </div>
+            <div class="small">Used only by recipes with patch assets. Leave prompt empty to disable patch prompts.</div>
+          </section>
+
+          <label for="replace-existing">Replace existing questions when apply</label>
+          <select id="replace-existing">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+
+          <label for="stimulus-hide-seconds">Hide images after seconds (optional)</label>
+          <input
+            id="stimulus-hide-seconds"
+            type="number"
+            min="0"
+            step="1"
+            placeholder="Blank or 0 = keep images visible"
+          />
+          <div class="row">
+            <button id="apply-hide-to-existing-btn" class="secondary" type="button">
+              Apply hide setting to existing questions
+            </button>
+          </div>
 
           <div class="row">
             <button id="preview-btn">Preview bulk generation</button>
@@ -451,6 +579,9 @@
       selectedQuestionId: null,
       isUploadingAssets: false,
       bulkTemplateCounter: 0,
+      recipes: [],
+      selectedRecipeType: null,
+      activeRecipeType: null,
     };
 
     function setStatus(id, message, mode = "ok") {
@@ -471,6 +602,130 @@
         throw new Error(data.detail || `Request failed (${response.status})`);
       }
       return data;
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function selectedRecipeMeta() {
+      return (state.recipes || []).find((item) => item.recipe_type === state.selectedRecipeType) || null;
+    }
+
+    function activeRecipeMeta() {
+      return (state.recipes || []).find((item) => item.recipe_type === state.activeRecipeType) || null;
+    }
+
+    function renderRecipeCatalog() {
+      const catalog = document.getElementById("recipe-catalog");
+      const empty = document.getElementById("recipe-empty");
+      catalog.innerHTML = "";
+
+      const recipes = state.recipes || [];
+      if (!recipes.length) {
+        empty.textContent = "No recipe definitions available.";
+        return;
+      }
+      empty.textContent = "";
+
+      for (const recipe of recipes) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `recipe-card ${state.selectedRecipeType === recipe.recipe_type ? "active" : ""}`;
+        btn.innerHTML = `
+          <h3>${escapeHtml(recipe.title)}</h3>
+          <p>${escapeHtml(recipe.summary || "")}</p>
+        `;
+        btn.addEventListener("click", () => {
+          state.selectedRecipeType = recipe.recipe_type;
+          renderRecipeCatalog();
+          renderRecipeDetail();
+          document.getElementById("confirm-recipe-btn").disabled = false;
+          if (state.activeRecipeType !== state.selectedRecipeType) {
+            setStatus("recipe-status", "Recipe selected. Confirm to open workspace.", "ok");
+          }
+        });
+        catalog.appendChild(btn);
+      }
+    }
+
+    function renderRecipeDetail() {
+      const detail = document.getElementById("recipe-detail");
+      const selected = selectedRecipeMeta();
+      if (!selected) {
+        detail.innerHTML = '<div class="small">Select a recipe to see instructions.</div>';
+        return;
+      }
+
+      const instructionItems = (selected.instructions || [])
+        .map((item) => `<li>${escapeHtml(item)}</li>`)
+        .join("");
+      const exampleItems = (selected.example_paths || [])
+        .map((item) => `<li><code>${escapeHtml(item)}</code></li>`)
+        .join("");
+      detail.innerHTML = `
+        <strong>${escapeHtml(selected.title)}</strong>
+        <p class="small">${escapeHtml(selected.summary || "")}</p>
+        ${instructionItems ? `<div class="small"><strong>Data prep</strong><ul>${instructionItems}</ul></div>` : ""}
+        ${exampleItems ? `<div class="small"><strong>Example paths</strong><ul>${exampleItems}</ul></div>` : ""}
+      `;
+    }
+
+    function syncRecipeConfigPanels() {
+      const activeType = state.activeRecipeType || "";
+      for (const panel of document.querySelectorAll("[data-config-for]")) {
+        const matches = panel.getAttribute("data-config-for") === activeType;
+        panel.classList.toggle("hidden", !matches);
+      }
+
+      const patchPanel = document.getElementById("patch-template-panel");
+      const activeRecipe = activeRecipeMeta();
+      const showPatchTemplate = Boolean(activeRecipe && activeRecipe.supports_patch_question_template);
+      patchPanel.classList.toggle("hidden", !showPatchTemplate);
+      if (!showPatchTemplate) {
+        document.getElementById("patch-prompt-template").value = "";
+        document.getElementById("patch-choices").value = "";
+        document.getElementById("patch-type").value = "single_choice";
+        document.getElementById("patch-required").value = "true";
+      }
+    }
+
+    function syncRecipeWorkspace() {
+      const workspace = document.getElementById("bulk-workspace-card");
+      const hasActiveRecipe = Boolean(state.activeRecipeType);
+      workspace.classList.toggle("hidden", !hasActiveRecipe);
+
+      const selected = selectedRecipeMeta();
+      const confirmed = activeRecipeMeta();
+      const confirmBtn = document.getElementById("confirm-recipe-btn");
+      confirmBtn.disabled = !selected;
+      confirmBtn.textContent = state.activeRecipeType && state.activeRecipeType !== state.selectedRecipeType
+        ? "Confirm and switch recipe"
+        : "Confirm recipe";
+      document.getElementById("workspace-recipe-label").textContent = confirmed
+        ? `Using recipe: ${confirmed.title}`
+        : "";
+      syncRecipeConfigPanels();
+      syncDraftControls();
+    }
+
+    async function loadRecipeCatalog() {
+      const recipes = await requestJson("/api/admin/questionnaires/bulk-recipes/catalog");
+      state.recipes = (recipes || []).filter((item) => item && item.recipe_type);
+      if (state.selectedRecipeType && !state.recipes.some((item) => item.recipe_type === state.selectedRecipeType)) {
+        state.selectedRecipeType = null;
+      }
+      if (!state.selectedRecipeType && state.recipes.length) {
+        state.selectedRecipeType = state.recipes[0].recipe_type;
+      }
+      renderRecipeCatalog();
+      renderRecipeDetail();
+      syncRecipeWorkspace();
     }
 
     function parseChoices(raw) {
@@ -567,12 +822,13 @@
       const status = versionMeta?.status || "";
       const isDraft = status === "draft";
       const isPublished = status === "published";
+      const hasActiveRecipe = Boolean(state.activeRecipeType);
       const publishBtn = document.getElementById("publish-btn");
       publishBtn.disabled = !(isDraft || isPublished);
       publishBtn.textContent = isPublished ? "Unpublish" : "Publish draft";
       document.getElementById("save-instructions-btn").disabled = !isDraft;
-      document.getElementById("preview-btn").disabled = !isDraft;
-      document.getElementById("apply-btn").disabled = !isDraft;
+      document.getElementById("preview-btn").disabled = !isDraft || !hasActiveRecipe;
+      document.getElementById("apply-btn").disabled = !isDraft || !hasActiveRecipe;
       document.getElementById("apply-hide-to-existing-btn").disabled = !isDraft;
       document.getElementById("save-edit-btn").disabled = !isDraft || !state.selectedQuestionId;
       document.getElementById("save-edit-bulk-btn").disabled = !isDraft || !state.selectedQuestionId;
@@ -876,25 +1132,17 @@
     function setupDropzone() {
       const dz = document.getElementById("dropzone");
       const filesPicker = document.getElementById("picker-files");
-      const folderPicker = document.getElementById("picker-folder");
 
       dz.setAttribute("tabindex", "0");
 
-      function openPicker(useFolderPicker) {
-        if (useFolderPicker) {
-          folderPicker.click();
-        } else {
-          filesPicker.click();
-        }
-      }
-
       dz.addEventListener("click", (event) => {
-        openPicker(Boolean(event.shiftKey));
+        event.preventDefault();
+        filesPicker.click();
       });
       dz.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          openPicker(Boolean(event.shiftKey));
+          filesPicker.click();
         }
       });
 
@@ -915,42 +1163,82 @@
         void uploadFiles(Array.from(event.currentTarget.files || []));
         event.currentTarget.value = "";
       });
-      folderPicker.addEventListener("change", (event) => {
-        void uploadFiles(Array.from(event.currentTarget.files || []));
-        event.currentTarget.value = "";
-      });
     }
 
-    function getRecipeConfigForPreset() {
-      const imagesPerCaseRaw = document.getElementById("images-per-case").value.trim();
-      let imagesPerCase = Number.parseInt(imagesPerCaseRaw || "", 10);
-      if (!Number.isFinite(imagesPerCase) || imagesPerCase < 1) {
-        const inferred = inferImagesPerCaseFromAssets(state.assets || []);
-        if (inferred) {
-          imagesPerCase = inferred.imagesPerCase;
-          document.getElementById("images-per-case").value = String(imagesPerCase);
+    function parseBooleanSelect(value, defaultValue = true) {
+      if (value === "true") return true;
+      if (value === "false") return false;
+      return defaultValue;
+    }
+
+    function buildActiveRecipeConfig() {
+      const recipeType = state.activeRecipeType;
+      if (!recipeType) {
+        throw new Error("Confirm a recipe first.");
+      }
+
+      if (recipeType === "indexed_suffix_sets") {
+        const imagesPerCaseRaw = document.getElementById("images-per-case").value.trim();
+        let imagesPerCase = Number.parseInt(imagesPerCaseRaw || "", 10);
+        if (!Number.isFinite(imagesPerCase) || imagesPerCase < 1) {
+          const inferred = inferImagesPerCaseFromAssets(state.assets || []);
+          if (inferred) {
+            imagesPerCase = inferred.imagesPerCase;
+            document.getElementById("images-per-case").value = String(imagesPerCase);
+          }
         }
-      }
-      if (!Number.isFinite(imagesPerCase) || imagesPerCase < 1) {
-        throw new Error("Could not infer images per case. Use numbered filenames like 1.png or 1a/1b.");
-      }
-      const rawLabels = document.getElementById("stimulus-slot-labels").value || "";
-      const labelSource = rawLabels.includes("\n")
-        ? rawLabels.split("\n")
-        : rawLabels.includes("|")
-          ? rawLabels.split("|")
-          : rawLabels.split(",");
-      const slotLabels = labelSource.map((item) => item.trim()).filter(Boolean);
-      if (slotLabels.length && slotLabels.length !== imagesPerCase) {
-        throw new Error("Image labels count must equal images per case.");
-      }
-      return {
-        recipe_type: "indexed_suffix_sets",
-        recipe_config: {
+        if (!Number.isFinite(imagesPerCase) || imagesPerCase < 1) {
+          throw new Error("Could not infer images per case. Use filenames like 1.png or 1a/1b.");
+        }
+
+        const rawLabels = document.getElementById("stimulus-slot-labels").value || "";
+        const labelSource = rawLabels.includes("\n")
+          ? rawLabels.split("\n")
+          : rawLabels.includes("|")
+            ? rawLabels.split("|")
+            : rawLabels.split(",");
+        const slotLabels = labelSource.map((item) => item.trim()).filter(Boolean);
+        if (slotLabels.length && slotLabels.length !== imagesPerCase) {
+          throw new Error("Image labels count must equal images per case.");
+        }
+
+        return {
           images_per_case: imagesPerCase,
           ...(slotLabels.length ? { stimulus_slot_labels: slotLabels } : {}),
-        },
-      };
+        };
+      }
+
+      if (recipeType === "single_per_file") {
+        return {};
+      }
+
+      if (recipeType === "paired_by_filename") {
+        const leftFolder = document.getElementById("paired-left-folder").value.trim() || "no_support";
+        const rightFolder = document.getElementById("paired-right-folder").value.trim() || "with_support";
+        if (!leftFolder || !rightFolder) {
+          throw new Error("Left and right folder names are required.");
+        }
+        return {
+          left_folder: leftFolder,
+          right_folder: rightFolder,
+          strict: parseBooleanSelect(document.getElementById("paired-strict").value, true),
+        };
+      }
+
+      if (recipeType === "case_with_patches") {
+        const imgFolder = document.getElementById("case-img-folder").value.trim() || "img";
+        const patchFolder = document.getElementById("case-patch-folder").value.trim() || "patch";
+        if (!imgFolder || !patchFolder) {
+          throw new Error("Main image and patch folder names are required.");
+        }
+        return {
+          img_folder: imgFolder,
+          patch_folder: patchFolder,
+          strict: parseBooleanSelect(document.getElementById("case-patch-strict").value, true),
+        };
+      }
+
+      throw new Error(`Unsupported recipe type: ${recipeType}`);
     }
 
     function parseStimulusHideSeconds() {
@@ -965,9 +1253,43 @@
       return parsed > 0 ? parsed : null;
     }
 
+    function buildPatchQuestionTemplate(hideSeconds) {
+      const activeRecipe = activeRecipeMeta();
+      if (!activeRecipe || !activeRecipe.supports_patch_question_template) {
+        return null;
+      }
+
+      const promptTemplate = document.getElementById("patch-prompt-template").value.trim();
+      if (!promptTemplate) {
+        return null;
+      }
+
+      const questionType = document.getElementById("patch-type").value || "single_choice";
+      const isRequired = document.getElementById("patch-required").value === "true";
+      const parsedChoices = parseChoices(document.getElementById("patch-choices").value || "");
+
+      if ((questionType === "single_choice" || questionType === "multi_choice") && parsedChoices.length === 0) {
+        throw new Error("Patch template requires choices for choice-based types.");
+      }
+      if ((questionType === "short_text" || questionType === "long_text") && parsedChoices.length > 0) {
+        throw new Error("Patch template cannot include choices for text types.");
+      }
+
+      return {
+        prompt_template: promptTemplate,
+        question_type: questionType,
+        is_required: isRequired,
+        choices: parsedChoices,
+        config: hideSeconds === null ? {} : { stimulus_hide_after_seconds: hideSeconds },
+      };
+    }
+
     function buildBulkPayload() {
       if (!selectedVersionIsDraft()) {
         throw new Error("Only draft versions are editable.");
+      }
+      if (!state.activeRecipeType) {
+        throw new Error("Confirm a recipe first.");
       }
       const assetIds = state.assets.map((item) => item.id);
       if (!assetIds.length) {
@@ -1007,12 +1329,14 @@
         };
       });
 
-      const recipe = getRecipeConfigForPreset();
+      const recipeConfig = buildActiveRecipeConfig();
+      const patchQuestionTemplate = buildPatchQuestionTemplate(hideSeconds);
       return {
-        recipe_type: recipe.recipe_type,
+        recipe_type: state.activeRecipeType,
         asset_ids: assetIds,
-        recipe_config: recipe.recipe_config,
+        recipe_config: recipeConfig,
         question_templates: questionTemplates,
+        ...(patchQuestionTemplate ? { patch_question_template: patchQuestionTemplate } : {}),
       };
     }
 
@@ -1020,6 +1344,7 @@
       try {
         await loadQuestionnaire();
         await loadVersionDetail();
+        await loadRecipeCatalog();
         await loadAssets();
       } catch (error) {
         setStatus("version-status", error.message || String(error), "err");
@@ -1047,6 +1372,30 @@
 
     document.getElementById("add-bulk-template-btn").addEventListener("click", () => {
       addBulkTemplate();
+    });
+
+    document.getElementById("confirm-recipe-btn").addEventListener("click", () => {
+      const selected = selectedRecipeMeta();
+      if (!selected) {
+        setStatus("recipe-status", "Select a recipe first.", "err");
+        return;
+      }
+      state.activeRecipeType = selected.recipe_type;
+      state.previewCases = [];
+      renderPreview();
+      syncRecipeWorkspace();
+      setStatus("recipe-status", `Confirmed recipe: ${selected.title}`, "ok");
+      if (state.activeRecipeType === "indexed_suffix_sets") {
+        refreshImagesPerCaseInference();
+      }
+    });
+
+    document.getElementById("change-recipe-btn").addEventListener("click", () => {
+      state.activeRecipeType = null;
+      state.previewCases = [];
+      renderPreview();
+      syncRecipeWorkspace();
+      setStatus("recipe-status", "Recipe workspace hidden. Select and confirm a recipe to continue.", "warn");
     });
 
     document.getElementById("save-q-btn").addEventListener("click", async () => {

@@ -36,6 +36,7 @@ from app.schemas import (
     BulkRecipeApplyPreviewRequest,
     BulkRecipeApplyResponse,
     BulkRecipeCasePreview,
+    BulkRecipeCatalogItemOut,
     BulkRecipePreviewRequest,
     BulkRecipePreviewResponse,
     BulkRecipeQuestionTemplate,
@@ -53,7 +54,7 @@ from app.schemas import (
     QuestionnaireVersionUpdateRequest,
 )
 from app.security import normalize_username
-from app.services.bulk_recipe_service import GroupedCase, group_assets_for_recipe
+from app.services.bulk_recipe_service import GroupedCase, group_assets_for_recipe, list_bulk_recipes
 from app.services.consent_service import normalize_optional_consent_text
 
 router = APIRouter(prefix="/api/admin/questionnaires", tags=["questionnaires"])
@@ -517,6 +518,25 @@ def create_questionnaire(
     db.commit()
     db.refresh(questionnaire)
     return _to_questionnaire_summary_out(questionnaire)
+
+
+@router.get("/bulk-recipes/catalog", response_model=list[BulkRecipeCatalogItemOut])
+def list_bulk_recipe_catalog(
+    current_user: User = Depends(get_admin_user),
+) -> list[BulkRecipeCatalogItemOut]:
+    del current_user
+    return [
+        BulkRecipeCatalogItemOut(
+            recipe_type=recipe.recipe_type,
+            title=recipe.title,
+            summary=recipe.summary,
+            instructions=recipe.instructions,
+            example_paths=recipe.example_paths,
+            config_keys=recipe.config_keys,
+            supports_patch_question_template=recipe.supports_patch_question_template,
+        )
+        for recipe in list_bulk_recipes()
+    ]
 
 
 @router.get("/{questionnaire_id}", response_model=QuestionnaireDetailOut)
