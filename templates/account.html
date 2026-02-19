@@ -122,13 +122,12 @@
     <section class="header">
       <div>
         <h1>Account Settings</h1>
-        <div id="whoami" class="meta">Loading user...</div>
       </div>
       <nav>
         {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
         {% if show_users_link %}<a href="/users">Users</a>{% endif %}
         {% if show_assigned_link %}<a href="/assigned">Assigned</a>{% endif %}
-        {% if show_account_link %}<a href="/account">Account</a>{% endif %}
+        {% if show_account_link %}<a id="account-link" href="/account">Account</a>{% endif %}
       </nav>
     </section>
 
@@ -175,6 +174,13 @@
       const el = document.getElementById(id);
       el.className = ok ? "status ok" : "status err";
       el.textContent = message || "";
+    }
+
+    function setAccountNavLabel(username) {
+      const accountLink = document.getElementById("account-link");
+      if (accountLink && username) {
+        accountLink.textContent = `Account (${username})`;
+      }
     }
 
     function base64urlToUint8Array(base64url) {
@@ -296,7 +302,7 @@
 
     function applyMe(me) {
       state.me = me;
-      document.getElementById("whoami").textContent = `Signed in as ${me.username} (${me.role})`;
+      setAccountNavLabel(me.username);
       document.getElementById("role-badge").textContent = `Role: ${me.role}`;
       document.getElementById("username").value = me.username || "";
       document.getElementById("yoe").value = me.year_of_experience ?? "";
@@ -405,7 +411,7 @@
       try {
         await loadMe();
       } catch (error) {
-        document.getElementById("whoami").textContent = error.message || String(error);
+        setStatus("account-status", error.message || String(error), false);
       }
       await loadPasskeys();
     }

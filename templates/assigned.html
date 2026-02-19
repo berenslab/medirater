@@ -84,13 +84,12 @@
     <section class="header">
       <div>
         <h1>Assigned Questionnaires</h1>
-        <div id="whoami" class="meta">Loading user...</div>
       </div>
       <nav>
         {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
         {% if show_users_link %}<a href="/users">Users</a>{% endif %}
         {% if show_assigned_link %}<a href="/assigned">Assigned</a>{% endif %}
-        {% if show_account_link %}<a href="/account">Account</a>{% endif %}
+        {% if show_account_link %}<a id="account-link" href="/account">Account</a>{% endif %}
       </nav>
     </section>
 
@@ -121,6 +120,13 @@
       const el = document.getElementById("status");
       el.className = ok ? "status ok" : "status err";
       el.textContent = message || "";
+    }
+
+    function setAccountNavLabel(username) {
+      const accountLink = document.getElementById("account-link");
+      if (accountLink && username) {
+        accountLink.textContent = `Account (${username})`;
+      }
     }
 
     async function requestJson(url, options = {}) {
@@ -176,9 +182,8 @@
     async function init() {
       try {
         const me = await requestJson("/api/auth/me");
-        document.getElementById("whoami").textContent = `Signed in as ${me.username} (${me.role})`;
-      } catch (error) {
-        document.getElementById("whoami").textContent = error.message || String(error);
+        setAccountNavLabel(me.username);
+      } catch (_error) {
       }
 
       await loadAssigned();
