@@ -219,3 +219,73 @@ def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
 
         forbidden_unassigned = user_client.get(f"/api/user/questionnaires/{version_a}")
         assert forbidden_unassigned.status_code == 404
+
+
+def test_bulk_assignment_apply_updates_scope_for_version(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+        _questionnaire_id, version_id = _create_published_version(
+            super_client,
+            "Bulk assignment target",
+            "root",
+        )
+
+    with TestClient(app) as alice_client:
+        _signup(alice_client, "alice")
+
+    with TestClient(app) as bob_client:
+        _signup(bob_client, "bob")
+
+    with TestClient(app) as super_client:
+        _login(super_client, "root")
+
+        first_apply = super_client.put(
+            "/api/admin/assignments/bulk",
+            json={
+                "questionnaire_version_id": version_id,
+                "active_usernames": ["alice"],
+                "scope_usernames": ["alice", "bob"],
+            },
+        )
+        assert first_apply.status_code == 200
+        first_json = first_apply.json()
+        assert first_json["created_count"] == 1
+        assert first_json["updated_count"] == 0
+        assert first_json["deactivated_count"] == 0
+        assert first_json["unchanged_count"] == 1
+        assert first_json["active_usernames"] == ["alice"]
+
+        listed_after_first = super_client.get(
+            f"/api/admin/assignments?questionnaire_version_id={version_id}"
+        )
+        assert listed_after_first.status_code == 200
+        listed_first_json = listed_after_first.json()
+        assert len(listed_first_json) == 1
+        assert listed_first_json[0]["username"] == "alice"
+        assert listed_first_json[0]["is_active"] is True
+
+        second_apply = super_client.put(
+            "/api/admin/assignments/bulk",
+            json={
+                "questionnaire_version_id": version_id,
+                "active_usernames": ["bob"],
+                "scope_usernames": ["alice", "bob"],
+            },
+        )
+        assert second_apply.status_code == 200
+        second_json = second_apply.json()
+        assert second_json["created_count"] == 1
+        assert second_json["updated_count"] == 1
+        assert second_json["deactivated_count"] == 1
+        assert second_json["unchanged_count"] == 0
+        assert second_json["active_usernames"] == ["bob"]
+
+        listed_after_second = super_client.get(
+            f"/api/admin/assignments?questionnaire_version_id={version_id}"
+        )
+        assert listed_after_second.status_code == 200
+        by_username = {item["username"]: item for item in listed_after_second.json()}
+        assert by_username["alice"]["is_active"] is False
+        assert by_username["bob"]["is_active"] is True

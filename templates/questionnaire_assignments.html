@@ -51,7 +51,7 @@
       display: grid;
       gap: 14px;
       padding: 14px;
-      grid-template-columns: 340px 1fr;
+      grid-template-columns: 360px 1fr;
     }
     .card {
       border: 1px solid var(--border);
@@ -72,10 +72,10 @@
       font-size: 0.88rem;
       color: #334357;
     }
-    select, button {
+    select, button, input {
       font: inherit;
     }
-    select {
+    select, input[type="search"] {
       width: 100%;
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -96,6 +96,39 @@
     .ok { color: var(--ok); }
     .err { color: var(--err); }
     .muted { color: var(--muted); }
+    .toggle-list {
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      max-height: 380px;
+      overflow: auto;
+      display: grid;
+      gap: 0;
+    }
+    .toggle-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 8px;
+      border-bottom: 1px solid #edf2f6;
+    }
+    .toggle-item:last-child {
+      border-bottom: 0;
+    }
+    .toggle-item input {
+      margin-top: 2px;
+      width: auto;
+    }
+    .toggle-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #253447;
+    }
+    .toggle-role {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -137,21 +170,25 @@
 
     <section class="content">
       <article class="card">
-        <h2>Assign User</h2>
+        <h2>Bulk Assign Users</h2>
+        <p class="muted" style="margin:0 0 8px;">Pick a published version, search users, toggle access, then apply once.</p>
 
         <label for="assign-version">Questionnaire version</label>
         <select id="assign-version"></select>
 
-        <label for="assign-user">User</label>
-        <select id="assign-user"></select>
+        <label for="assign-search">Search users</label>
+        <input id="assign-search" type="search" placeholder="Search by username or role" />
 
-        <label for="assign-active">Active</label>
-        <select id="assign-active">
-          <option value="true">true</option>
-          <option value="false">false</option>
-        </select>
+        <div class="row" style="margin-top:6px;">
+          <button id="select-filtered-btn" type="button" class="secondary">Select filtered</button>
+          <button id="clear-filtered-btn" type="button" class="secondary">Clear filtered</button>
+          <button id="refresh-users-btn" type="button" class="secondary">Reload users</button>
+        </div>
 
-        <button id="assign-btn">Create or update assignment</button>
+        <div id="selection-summary" class="muted" style="margin-top:8px;"></div>
+        <div id="user-toggle-list" class="toggle-list"></div>
+
+        <button id="apply-bulk-btn" type="button">Apply assignments</button>
         <div id="assign-status" class="status"></div>
       </article>
 
@@ -187,6 +224,7 @@
       assignableVersions: [],
       users: [],
       assignments: [],
+      bulkSelectedUsernames: new Set(),
     };
 
     function setStatus(id, message, ok) {
@@ -216,9 +254,22 @@
       return data;
     }
 
+    function getFilteredUsers() {
+      const keyword = (document.getElementById("assign-search").value || "").trim().toLowerCase();
+      if (!keyword) {
+        return state.users;
+      }
+      return state.users.filter((user) => (
+        user.username.toLowerCase().includes(keyword) || user.role.toLowerCase().includes(keyword)
+      ));
+    }
+
     function renderVersionSelects() {
       const assignVersion = document.getElementById("assign-version");
       const filterVersion = document.getElementById("filter-version");
+      const previousAssignVersion = assignVersion.value;
+      const previousFilterVersion = filterVersion.value;
+
       assignVersion.innerHTML = "";
       filterVersion.innerHTML = "";
 
@@ -249,26 +300,73 @@
         option.textContent = `v${version.version_number} (${version.status})`;
         filterVersion.appendChild(option);
       }
+
+      const hasAssignable = state.assignableVersions.some((item) => item.id === previousAssignVersion);
+      if (hasAssignable) {
+        assignVersion.value = previousAssignVersion;
+      }
+
+      const hasFilterVersion = state.versions.some((item) => item.id === previousFilterVersion);
+      if (hasFilterVersion || previousFilterVersion === "") {
+        filterVersion.value = previousFilterVersion;
+      } else if (state.assignableVersions.length) {
+        filterVersion.value = state.assignableVersions[0].id;
+      }
     }
 
-    function renderUserSelect() {
-      const select = document.getElementById("assign-user");
-      select.innerHTML = "";
+    function renderSelectionSummary() {
+      const summary = document.getElementById("selection-summary");
+      const filteredCount = getFilteredUsers().length;
+      summary.textContent = `${state.bulkSelectedUsernames.size} selected of ${state.users.length} users (${filteredCount} shown)`;
+    }
+
+    function renderUserToggleList() {
+      const list = document.getElementById("user-toggle-list");
+      const filteredUsers = getFilteredUsers();
+      list.innerHTML = "";
 
       if (!state.users.length) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.textContent = "No active users";
-        select.appendChild(option);
+        list.innerHTML = '<div class="toggle-item muted">No active users available.</div>';
+        renderSelectionSummary();
         return;
       }
 
-      for (const user of state.users) {
-        const option = document.createElement("option");
-        option.value = user.username;
-        option.textContent = `${user.username} (${user.role})`;
-        select.appendChild(option);
+      if (!filteredUsers.length) {
+        list.innerHTML = '<div class="toggle-item muted">No users match this search.</div>';
+        renderSelectionSummary();
+        return;
       }
+
+      for (const user of filteredUsers) {
+        const row = document.createElement("label");
+        row.className = "toggle-item";
+        const checked = state.bulkSelectedUsernames.has(user.username) ? "checked" : "";
+        row.innerHTML = `
+          <input type="checkbox" data-user-toggle="${user.username}" ${checked} />
+          <div>
+            <div class="toggle-name">${user.username}</div>
+            <div class="toggle-role">${user.role}</div>
+          </div>
+        `;
+        list.appendChild(row);
+      }
+
+      for (const checkbox of list.querySelectorAll("[data-user-toggle]")) {
+        checkbox.addEventListener("change", (event) => {
+          const username = event.currentTarget.getAttribute("data-user-toggle");
+          if (!username) {
+            return;
+          }
+          if (event.currentTarget.checked) {
+            state.bulkSelectedUsernames.add(username);
+          } else {
+            state.bulkSelectedUsernames.delete(username);
+          }
+          renderSelectionSummary();
+        });
+      }
+
+      renderSelectionSummary();
     }
 
     function renderAssignments() {
@@ -305,6 +403,7 @@
             });
             setStatus("list-status", "Assignment updated.", true);
             await loadAssignments();
+            await loadBulkSelection();
           } catch (error) {
             setStatus("list-status", error.message || String(error), false);
           }
@@ -322,7 +421,26 @@
     async function loadAssignableUsers() {
       const users = await requestJson("/api/admin/assignment-target-users");
       state.users = users || [];
-      renderUserSelect();
+      renderUserToggleList();
+    }
+
+    async function loadBulkSelection() {
+      const versionId = document.getElementById("assign-version").value;
+      if (!versionId) {
+        state.bulkSelectedUsernames = new Set();
+        renderUserToggleList();
+        return;
+      }
+
+      const query = new URLSearchParams();
+      query.set("questionnaire_id", QUESTIONNAIRE_ID);
+      query.set("questionnaire_version_id", versionId);
+      const items = await requestJson(`/api/admin/assignments?${query.toString()}`);
+      const selected = new Set(
+        (items || []).filter((item) => item.is_active).map((item) => item.username)
+      );
+      state.bulkSelectedUsernames = selected;
+      renderUserToggleList();
     }
 
     async function loadAssignments() {
@@ -343,34 +461,46 @@
       }
     }
 
-    async function createOrUpdateAssignment() {
+    async function applyBulkAssignments() {
       try {
         const versionId = document.getElementById("assign-version").value;
-        const username = document.getElementById("assign-user").value;
-        const isActive = document.getElementById("assign-active").value === "true";
-
         if (!versionId) {
           throw new Error("Select a published version first.");
         }
-        if (!username) {
-          throw new Error("Select a target user first.");
-        }
 
-        await requestJson("/api/admin/assignments", {
-          method: "POST",
+        const response = await requestJson("/api/admin/assignments/bulk", {
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            target_username: username,
             questionnaire_version_id: versionId,
-            is_active: isActive,
+            active_usernames: Array.from(state.bulkSelectedUsernames),
+            scope_usernames: state.users.map((item) => item.username),
           }),
         });
 
-        setStatus("assign-status", "Assignment saved.", true);
+        setStatus(
+          "assign-status",
+          `Applied. created=${response.created_count}, updated=${response.updated_count}, deactivated=${response.deactivated_count}, unchanged=${response.unchanged_count}.`,
+          true,
+        );
+
         await loadAssignments();
+        await loadBulkSelection();
       } catch (error) {
         setStatus("assign-status", error.message || String(error), false);
       }
+    }
+
+    function selectFilteredUsers(checked) {
+      const filteredUsers = getFilteredUsers();
+      for (const user of filteredUsers) {
+        if (checked) {
+          state.bulkSelectedUsernames.add(user.username);
+        } else {
+          state.bulkSelectedUsernames.delete(user.username);
+        }
+      }
+      renderUserToggleList();
     }
 
     async function init() {
@@ -382,12 +512,28 @@
 
       await loadQuestionnaireMeta();
       await loadAssignableUsers();
+      await loadBulkSelection();
       await loadAssignments();
     }
 
     document.getElementById("refresh-btn").addEventListener("click", loadAssignments);
     document.getElementById("filter-version").addEventListener("change", loadAssignments);
-    document.getElementById("assign-btn").addEventListener("click", createOrUpdateAssignment);
+
+    document.getElementById("assign-version").addEventListener("change", async () => {
+      const versionId = document.getElementById("assign-version").value;
+      document.getElementById("filter-version").value = versionId || "";
+      await loadBulkSelection();
+      await loadAssignments();
+    });
+
+    document.getElementById("assign-search").addEventListener("input", renderUserToggleList);
+    document.getElementById("select-filtered-btn").addEventListener("click", () => selectFilteredUsers(true));
+    document.getElementById("clear-filtered-btn").addEventListener("click", () => selectFilteredUsers(false));
+    document.getElementById("refresh-users-btn").addEventListener("click", async () => {
+      await loadAssignableUsers();
+      await loadBulkSelection();
+    });
+    document.getElementById("apply-bulk-btn").addEventListener("click", applyBulkAssignments);
 
     init().catch((error) => {
       setStatus("list-status", error.message || String(error), false);

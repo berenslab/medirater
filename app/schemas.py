@@ -149,6 +149,22 @@ class AssignmentUpdateRequest(BaseModel):
     is_active: bool
 
 
+class AssignmentBulkApplyRequest(BaseModel):
+    questionnaire_version_id: str = Field(min_length=1)
+    active_usernames: list[str] = Field(default_factory=list)
+    scope_usernames: list[str] = Field(default_factory=list)
+
+
+class AssignmentBulkApplyResponse(BaseModel):
+    questionnaire_version_id: str
+    active_usernames: list[str]
+    scope_count: int
+    created_count: int
+    updated_count: int
+    deactivated_count: int
+    unchanged_count: int
+
+
 class AssignmentOut(BaseModel):
     id: str
     username: str

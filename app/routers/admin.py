@@ -15,6 +15,8 @@ from app.models import (
     UserAssignment,
 )
 from app.schemas import (
+    AssignmentBulkApplyRequest,
+    AssignmentBulkApplyResponse,
     AssignmentCreateRequest,
     AssignmentOut,
     AssignmentUpdateRequest,
@@ -64,6 +66,50 @@ def _to_assignment_out(
         is_active=assignment.is_active,
         created_at=assignment.created_at,
     )
+
+
+def _load_assignable_published_version(
+    db: Session,
+    *,
+    current_user: User,
+    questionnaire_version_id: str,
+) -> tuple[QuestionnaireVersion, Questionnaire]:
+    version_row = db.execute(
+        select(QuestionnaireVersion, Questionnaire)
+        .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)
+        .where(QuestionnaireVersion.id == questionnaire_version_id)
+    ).first()
+    if not version_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Questionnaire version not found")
+    version, questionnaire = version_row
+
+    if version.status != QuestionnaireVersionStatus.PUBLISHED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only published questionnaire versions can be assigned",
+        )
+
+    if current_user.role == Role.ADMIN and questionnaire.owner_admin_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins can only assign versions from their own questionnaires",
+        )
+
+    return version, questionnaire
+
+
+def _normalize_usernames(raw_usernames: list[str] | None) -> list[str]:
+    if not raw_usernames:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_usernames:
+        candidate = normalize_username(raw)
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        normalized.append(candidate)
+    return normalized
 
 
 @router.get("/settings/public-signup-mode", response_model=SignupModeResponse)
@@ -361,26 +407,11 @@ def create_or_update_assignment(
     if not target_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target user not found")
 
-    version_row = db.execute(
-        select(QuestionnaireVersion, Questionnaire)
-        .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)
-        .where(QuestionnaireVersion.id == payload.questionnaire_version_id)
-    ).first()
-    if not version_row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Questionnaire version not found")
-    version, questionnaire = version_row
-
-    if version.status != QuestionnaireVersionStatus.PUBLISHED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only published questionnaire versions can be assigned",
-        )
-
-    if current_user.role == Role.ADMIN and questionnaire.owner_admin_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admins can only assign versions from their own questionnaires",
-        )
+    version, questionnaire = _load_assignable_published_version(
+        db,
+        current_user=current_user,
+        questionnaire_version_id=payload.questionnaire_version_id,
+    )
 
     assignment = db.scalar(
         select(UserAssignment)
@@ -407,6 +438,114 @@ def create_or_update_assignment(
         version=version,
         questionnaire=questionnaire,
         granted_by_username=current_user.username,
+    )
+
+
+@router.put("/assignments/bulk", response_model=AssignmentBulkApplyResponse)
+def bulk_apply_assignments(
+    payload: AssignmentBulkApplyRequest,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> AssignmentBulkApplyResponse:
+    version, _ = _load_assignable_published_version(
+        db,
+        current_user=current_user,
+        questionnaire_version_id=payload.questionnaire_version_id,
+    )
+
+    normalized_active = _normalize_usernames(payload.active_usernames)
+    normalized_scope = _normalize_usernames(payload.scope_usernames)
+
+    if normalized_scope:
+        active_outside_scope = [item for item in normalized_active if item not in set(normalized_scope)]
+        if active_outside_scope:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "active_usernames must be a subset of scope_usernames. "
+                    f"Invalid: {', '.join(active_outside_scope)}"
+                ),
+            )
+        scope_usernames = normalized_scope
+    else:
+        scope_usernames = normalized_active
+
+    if not scope_usernames:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="scope_usernames cannot be empty for bulk assignment",
+        )
+
+    scope_users = db.execute(select(User).where(User.username.in_(scope_usernames))).scalars().all()
+    users_by_username = {user.username: user for user in scope_users}
+    missing_scope = [username for username in scope_usernames if username not in users_by_username]
+    if missing_scope:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown target usernames: {', '.join(missing_scope)}",
+        )
+
+    scope_user_ids = [users_by_username[username].id for username in scope_usernames]
+    active_user_ids = {
+        users_by_username[username].id
+        for username in normalized_active
+        if username in users_by_username
+    }
+
+    existing_rows = db.execute(
+        select(UserAssignment)
+        .where(UserAssignment.questionnaire_version_id == version.id)
+        .where(UserAssignment.user_id.in_(scope_user_ids))
+    ).scalars().all()
+    existing_by_user_id = {item.user_id: item for item in existing_rows}
+
+    created_count = 0
+    updated_count = 0
+    deactivated_count = 0
+    unchanged_count = 0
+
+    for user in scope_users:
+        should_be_active = user.id in active_user_ids
+        assignment = existing_by_user_id.get(user.id)
+        if not assignment:
+            if should_be_active:
+                db.add(
+                    UserAssignment(
+                        user_id=user.id,
+                        questionnaire_version_id=version.id,
+                        granted_by_id=current_user.id,
+                        is_active=True,
+                    )
+                )
+                created_count += 1
+            else:
+                unchanged_count += 1
+            continue
+
+        if assignment.is_active == should_be_active:
+            unchanged_count += 1
+            continue
+
+        assignment.is_active = should_be_active
+        assignment.granted_by_id = current_user.id
+        updated_count += 1
+        if not should_be_active:
+            deactivated_count += 1
+
+    db.commit()
+
+    active_usernames_in_scope = [
+        username for username in scope_usernames if users_by_username[username].id in active_user_ids
+    ]
+
+    return AssignmentBulkApplyResponse(
+        questionnaire_version_id=version.id,
+        active_usernames=active_usernames_in_scope,
+        scope_count=len(scope_usernames),
+        created_count=created_count,
+        updated_count=updated_count,
+        deactivated_count=deactivated_count,
+        unchanged_count=unchanged_count,
     )
 
 
