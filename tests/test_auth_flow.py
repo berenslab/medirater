@@ -48,7 +48,37 @@ def _create_published_questionnaire_version(client: TestClient, title: str) -> s
     return version_id
 
 
-def test_open_signup_and_login_flow() -> None:
+def _set_public_signup_open(test_session_factory) -> None:
+    settings = get_settings()
+    with test_session_factory() as db:
+        _, bootstrap_token = issue_signup_token(
+            db,
+            role=Role.SUPERADMIN,
+            created_by_id=None,
+            expires_in_minutes=60,
+            token_pepper=settings.token_pepper,
+        )
+        db.commit()
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+        mode = client.put(
+            "/api/admin/settings/public-signup-mode",
+            json={"mode": "open"},
+        )
+        assert mode.status_code == 200
+        assert mode.json()["mode"] == "open"
+
+
+def test_default_signup_mode_is_invite_only() -> None:
+    with TestClient(app) as client:
+        blocked = client.post("/api/auth/signup/begin", json={"username": "alice"})
+        assert blocked.status_code == 403
+
+
+def test_open_signup_and_login_flow(test_session_factory) -> None:
+    _set_public_signup_open(test_session_factory)
+
     with TestClient(app) as client:
         signup = _signup(client, "alice")
         assert signup["user"]["role"] == "user"
@@ -68,7 +98,9 @@ def test_open_signup_and_login_flow() -> None:
         assert login_complete.status_code == 200
 
 
-def test_username_is_unique_case_insensitive() -> None:
+def test_username_is_unique_case_insensitive(test_session_factory) -> None:
+    _set_public_signup_open(test_session_factory)
+
     with TestClient(app) as client:
         _signup(client, "alice")
 
@@ -76,7 +108,9 @@ def test_username_is_unique_case_insensitive() -> None:
         assert duplicate.status_code == 409
 
 
-def test_account_update_username_uniqueness_and_yoe_requirement() -> None:
+def test_account_update_username_uniqueness_and_yoe_requirement(test_session_factory) -> None:
+    _set_public_signup_open(test_session_factory)
+
     with TestClient(app) as alice_client, TestClient(app) as bob_client:
         _signup(alice_client, "alice")
         _signup(bob_client, "bob")

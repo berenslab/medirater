@@ -11,14 +11,14 @@ def ensure_default_settings(db: Session) -> None:
     existing = db.get(AppSetting, PUBLIC_SIGNUP_MODE_KEY)
     if existing:
         return
-    db.add(AppSetting(key=PUBLIC_SIGNUP_MODE_KEY, value=SignupMode.OPEN.value))
+    db.add(AppSetting(key=PUBLIC_SIGNUP_MODE_KEY, value=SignupMode.INVITE_ONLY.value))
     db.commit()
 
 
 def get_public_signup_mode(db: Session) -> SignupMode:
     setting = db.get(AppSetting, PUBLIC_SIGNUP_MODE_KEY)
     if not setting:
-        return SignupMode.OPEN
+        return SignupMode.INVITE_ONLY
     return SignupMode(setting.value)
 
 

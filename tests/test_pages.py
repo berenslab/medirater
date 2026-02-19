@@ -42,6 +42,18 @@ def _bootstrap_superadmin_token(test_session_factory) -> str:
         return token
 
 
+def _set_public_signup_open(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+        mode = client.put(
+            "/api/admin/settings/public-signup-mode",
+            json={"mode": "open"},
+        )
+        assert mode.status_code == 200
+        assert mode.json()["mode"] == "open"
+
+
 def test_public_pages_and_route_guards() -> None:
     with TestClient(app) as client:
         home = client.get("/", follow_redirects=False)
@@ -109,7 +121,9 @@ def test_public_pages_and_route_guards() -> None:
         assert me.headers["location"] == "/"
 
 
-def test_logged_in_regular_user_without_yoe_lands_on_account() -> None:
+def test_logged_in_regular_user_without_yoe_lands_on_account(test_session_factory) -> None:
+    _set_public_signup_open(test_session_factory)
+
     with TestClient(app) as client:
         _signup(client, "alice")
 
@@ -164,7 +178,9 @@ def test_logged_in_regular_user_without_yoe_lands_on_account() -> None:
         assert assignments.headers["location"] == "/account"
 
 
-def test_logged_in_regular_user_with_yoe_lands_on_assigned() -> None:
+def test_logged_in_regular_user_with_yoe_lands_on_assigned(test_session_factory) -> None:
+    _set_public_signup_open(test_session_factory)
+
     with TestClient(app) as client:
         _signup(client, "alice")
         updated = client.patch(

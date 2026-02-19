@@ -92,6 +92,11 @@ def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
 
     with TestClient(app) as super_client:
         _signup(super_client, "root", token=bootstrap_token)
+        mode = super_client.put(
+            "/api/admin/settings/public-signup-mode",
+            json={"mode": "open"},
+        )
+        assert mode.status_code == 200
 
         admin_a_token = super_client.post(
             "/api/admin/signup-tokens",
@@ -226,6 +231,11 @@ def test_bulk_assignment_apply_updates_scope_for_version(test_session_factory) -
 
     with TestClient(app) as super_client:
         _signup(super_client, "root", token=bootstrap_token)
+        mode = super_client.put(
+            "/api/admin/settings/public-signup-mode",
+            json={"mode": "open"},
+        )
+        assert mode.status_code == 200
         _questionnaire_id, version_id = _create_published_version(
             super_client,
             "Bulk assignment target",
