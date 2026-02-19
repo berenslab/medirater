@@ -54,6 +54,11 @@
       gap: 12px;
       padding: 14px;
     }
+    .footer-actions {
+      display: flex;
+      justify-content: flex-end;
+      padding: 0 14px 14px;
+    }
     .card {
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -157,12 +162,14 @@
         <div class="row">
           <button id="add-passkey-btn">Add passkey</button>
           <button id="refresh-passkeys-btn" class="secondary">Refresh</button>
-          <button id="logout-btn" class="danger">Logout</button>
         </div>
         <div id="passkey-status" class="status"></div>
         <div id="passkeys-list"></div>
       </article>
     </section>
+    <div class="footer-actions">
+      <button id="logout-btn" class="danger">Logout</button>
+    </div>
   </main>
 
   <script>
