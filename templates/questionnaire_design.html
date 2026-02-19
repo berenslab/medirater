@@ -520,10 +520,12 @@
 
   <script>
     const QUESTIONNAIRE_ID = {{ questionnaire_id | tojson }};
+    const RECIPE_TYPE_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
     const state = {
       questionnaire: null,
       selectedVersionId: null,
+      loadedVersionDetailId: null,
       versionDetail: null,
       assets: [],
       previewCases: [],
@@ -534,6 +536,8 @@
       selectedRecipeType: null,
       activeRecipeType: null,
       loadedRecipeDesignType: null,
+      recipeTypeFromVersion: null,
+      recipeTypeConflict: false,
     };
 
     function setStatus(id, message, mode = "ok") {
@@ -563,6 +567,45 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+    }
+
+    function normalizeRecipeTypeKey(raw) {
+      if (typeof raw !== "string") {
+        return null;
+      }
+      const value = raw.trim().toLowerCase();
+      if (!value) {
+        return null;
+      }
+      if (!RECIPE_TYPE_KEY_PATTERN.test(value)) {
+        return null;
+      }
+      return value;
+    }
+
+    function detectRecipeUsageFromQuestions(questions) {
+      const counts = new Map();
+      for (const question of Array.isArray(questions) ? questions : []) {
+        const recipeType = normalizeRecipeTypeKey(question?.config?.recipe_type);
+        if (!recipeType) {
+          continue;
+        }
+        counts.set(recipeType, (counts.get(recipeType) || 0) + 1);
+      }
+
+      if (!counts.size) {
+        return { recipeType: null, hasConflict: false };
+      }
+
+      let winnerType = null;
+      let winnerCount = -1;
+      for (const [recipeType, count] of counts.entries()) {
+        if (count > winnerCount) {
+          winnerType = recipeType;
+          winnerCount = count;
+        }
+      }
+      return { recipeType: winnerType, hasConflict: counts.size > 1 };
     }
 
     function selectedRecipeMeta() {
@@ -747,9 +790,64 @@
       if (!state.selectedRecipeType && state.recipes.length) {
         state.selectedRecipeType = state.recipes[0].recipe_type;
       }
+      await syncRecipeFromVersionContext({ versionChanged: false });
+      if (state.versionDetail && state.activeRecipeType && state.recipeTypeFromVersion === state.activeRecipeType) {
+        prefillTemplateEditorsFromVersionDetail();
+      }
       renderRecipeCatalog();
       renderRecipeDetail();
       syncRecipeWorkspace();
+    }
+
+    async function syncRecipeFromVersionContext({ versionChanged = false } = {}) {
+      const recipes = state.recipes || [];
+      if (!recipes.length) {
+        return;
+      }
+
+      const detectedType = state.recipeTypeFromVersion;
+      if (!detectedType) {
+        if (versionChanged) {
+          state.activeRecipeType = null;
+          state.loadedRecipeDesignType = null;
+        }
+        if (!state.selectedRecipeType || !recipes.some((item) => item.recipe_type === state.selectedRecipeType)) {
+          state.selectedRecipeType = recipes[0]?.recipe_type || null;
+        }
+        return;
+      }
+
+      const detectedMeta = recipes.find((item) => item.recipe_type === detectedType) || null;
+      const shouldAutoLoad = versionChanged || !state.activeRecipeType;
+      if (!detectedMeta) {
+        if (shouldAutoLoad) {
+          state.activeRecipeType = null;
+          state.loadedRecipeDesignType = null;
+          state.selectedRecipeType = recipes[0]?.recipe_type || null;
+        }
+        setStatus(
+          "recipe-status",
+          `Detected recipe '${detectedType}' from existing questions, but it is not available in this build.`,
+          "warn",
+        );
+        return;
+      }
+
+      if (!shouldAutoLoad) {
+        return;
+      }
+
+      state.selectedRecipeType = detectedType;
+      state.activeRecipeType = detectedType;
+      state.previewCases = [];
+      await loadRecipeDesignFragment(detectedType);
+      setStatus(
+        "recipe-status",
+        state.recipeTypeConflict
+          ? `Detected mixed recipe metadata. Using: ${detectedMeta.title}.`
+          : `Detected recipe from existing questions: ${detectedMeta.title}.`,
+        state.recipeTypeConflict ? "warn" : "ok",
+      );
     }
 
     function parseChoices(raw) {
@@ -831,6 +929,160 @@
         syncBulkTemplateRemoveButtons();
       });
       syncBulkTemplateRemoveButtons();
+    }
+
+    function clearBulkTemplateCards() {
+      document.getElementById("bulk-template-list").innerHTML = "";
+      state.bulkTemplateCounter = 0;
+      syncBulkTemplateRemoveButtons();
+    }
+
+    function normalizeQuestionTypeForTemplate(raw) {
+      const allowed = new Set(["single_choice", "multi_choice", "short_text", "long_text"]);
+      return allowed.has(raw) ? raw : "short_text";
+    }
+
+    function extractTemplatePrefillFromVersionDetail() {
+      const questions = [...(state.versionDetail?.questions || [])].sort((a, b) => a.position - b.position);
+      if (!questions.length) {
+        return { caseTemplates: [], patchTemplate: null, referenceConfig: {}, hideSeconds: null };
+      }
+
+      const byCase = new Map();
+      const ungrouped = [];
+      for (const question of questions) {
+        const config = question?.config && typeof question.config === "object" ? question.config : {};
+        const caseKeyRaw = typeof config.case_key === "string" ? config.case_key.trim() : "";
+        if (caseKeyRaw) {
+          if (!byCase.has(caseKeyRaw)) {
+            byCase.set(caseKeyRaw, []);
+          }
+          byCase.get(caseKeyRaw).push(question);
+        } else {
+          ungrouped.push(question);
+        }
+      }
+
+      const referenceQuestions = byCase.size
+        ? Array.from(byCase.values())[0] || []
+        : ungrouped;
+      const caseTemplates = [];
+      let patchTemplate = null;
+      let referenceConfig = {};
+      let hideSeconds = null;
+
+      for (const question of referenceQuestions) {
+        const config = question?.config && typeof question.config === "object" ? question.config : {};
+        if (!Object.keys(referenceConfig).length) {
+          referenceConfig = config;
+        }
+
+        const rawHide = config.stimulus_hide_after_seconds;
+        const parsedHide = Number(rawHide);
+        if (hideSeconds === null && Number.isFinite(parsedHide) && parsedHide > 0) {
+          hideSeconds = parsedHide;
+        }
+
+        const template = {
+          prompt_template: String(question.prompt_text || ""),
+          question_type: normalizeQuestionTypeForTemplate(question.question_type),
+          is_required: question.is_required !== false,
+          choices: Array.isArray(question.choices)
+            ? question.choices.map((item) => ({
+                label: String(item?.label || ""),
+                value: String(item?.value || ""),
+              }))
+            : [],
+        };
+
+        const isPatchQuestion = Boolean(config.patch_asset_id);
+        if (isPatchQuestion) {
+          if (!patchTemplate) {
+            patchTemplate = template;
+          }
+        } else {
+          caseTemplates.push(template);
+        }
+      }
+
+      return { caseTemplates, patchTemplate, referenceConfig, hideSeconds };
+    }
+
+    function prefillRecipeConfigFromReference(referenceConfig) {
+      const config = referenceConfig && typeof referenceConfig === "object" ? referenceConfig : {};
+      const fields = recipeConfigFields();
+      for (const field of fields) {
+        const configKey = String(field.getAttribute("data-recipe-config-key") || "").trim();
+        if (!configKey) {
+          continue;
+        }
+        const typeHint = String(field.getAttribute("data-config-type") || "").trim().toLowerCase();
+        const fieldType = String(field.getAttribute("type") || "").trim().toLowerCase();
+        let value = config[configKey];
+
+        if (value === undefined && configKey === "images_per_case") {
+          const stimulusIds = Array.isArray(config.stimulus_asset_ids) ? config.stimulus_asset_ids : [];
+          if (stimulusIds.length) {
+            value = stimulusIds.length;
+          }
+        }
+        if (value === undefined && configKey === "stimulus_slot_labels") {
+          const labels = Array.isArray(config.stimulus_labels) ? config.stimulus_labels : [];
+          if (labels.length) {
+            value = labels;
+          }
+        }
+
+        if (value === undefined) {
+          continue;
+        }
+
+        if (typeHint === "string_list" && Array.isArray(value)) {
+          field.value = value.map((item) => String(item).trim()).filter(Boolean).join("|");
+          continue;
+        }
+
+        if (typeHint === "boolean" || fieldType === "checkbox") {
+          if (fieldType === "checkbox") {
+            field.checked = Boolean(value);
+          } else {
+            field.value = Boolean(value) ? "true" : "false";
+          }
+          continue;
+        }
+
+        if (typeHint === "json") {
+          try {
+            field.value = JSON.stringify(value);
+          } catch (_error) {
+            field.value = "";
+          }
+          continue;
+        }
+
+        field.value = String(value);
+      }
+    }
+
+    function prefillTemplateEditorsFromVersionDetail() {
+      const { caseTemplates, patchTemplate, referenceConfig, hideSeconds } = extractTemplatePrefillFromVersionDetail();
+
+      clearBulkTemplateCards();
+      if (caseTemplates.length) {
+        for (const template of caseTemplates) {
+          addBulkTemplate(template);
+        }
+      } else {
+        addBulkTemplate();
+      }
+
+      prefillRecipeConfigFromReference(referenceConfig);
+
+      document.getElementById("patch-prompt-template").value = patchTemplate?.prompt_template || "";
+      document.getElementById("patch-choices").value = choicesToText(patchTemplate?.choices || []);
+      document.getElementById("patch-type").value = patchTemplate?.question_type || "single_choice";
+      document.getElementById("patch-required").value = patchTemplate?.is_required === false ? "false" : "true";
+      document.getElementById("stimulus-hide-seconds").value = hideSeconds === null ? "" : String(hideSeconds);
     }
 
     function selectedVersionMeta() {
@@ -1093,18 +1345,41 @@
 
     async function loadVersionDetail() {
       if (!state.selectedVersionId) {
+        state.loadedVersionDetailId = null;
         state.versionDetail = null;
+        state.recipeTypeFromVersion = null;
+        state.recipeTypeConflict = false;
         renderQuestions();
+        renderRecipeCatalog();
+        renderRecipeDetail();
+        syncRecipeWorkspace();
         return;
       }
 
+      const previousVersionId = state.loadedVersionDetailId;
       const detail = await requestJson(
         `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}`,
       );
+      const loadedVersionId = String(detail.id || state.selectedVersionId);
+      const versionChanged = previousVersionId !== loadedVersionId;
+      state.loadedVersionDetailId = loadedVersionId;
       state.versionDetail = detail;
+      const detectedRecipe = detectRecipeUsageFromQuestions(detail.questions || []);
+      state.recipeTypeFromVersion = detectedRecipe.recipeType;
+      state.recipeTypeConflict = detectedRecipe.hasConflict;
+
       document.getElementById("instructions").value = detail.instructions_markdown || "";
       document.getElementById("consent-text").value = detail.consent_text || "";
+
+      await syncRecipeFromVersionContext({ versionChanged });
+      if (versionChanged) {
+        prefillTemplateEditorsFromVersionDetail();
+      }
+
       renderQuestions();
+      renderRecipeCatalog();
+      renderRecipeDetail();
+      syncRecipeWorkspace();
       syncDraftControls();
       setStatus("version-status", `Loaded v${detail.version_number} (${detail.status}).`, "ok");
     }
@@ -1619,6 +1894,9 @@
         await loadRecipeDesignFragment(selected.recipe_type);
         state.activeRecipeType = selected.recipe_type;
         state.previewCases = [];
+        if ((state.versionDetail?.questions || []).length) {
+          prefillTemplateEditorsFromVersionDetail();
+        }
         renderPreview();
         syncRecipeWorkspace();
         setStatus("recipe-status", `Confirmed recipe: ${selected.title}`, "ok");
