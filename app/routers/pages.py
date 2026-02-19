@@ -1,14 +1,18 @@
+import json
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from jinja2 import TemplateNotFound
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import (
+    Question,
     Questionnaire,
     QuestionnaireConsent,
     QuestionnaireVersion,
@@ -22,6 +26,8 @@ router = APIRouter(include_in_schema=False)
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+_RECIPE_TEMPLATE_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 def _current_user_from_session(request: Request, db: Session, settings: Settings):
@@ -90,6 +96,54 @@ def _has_user_consent_for_version(
         .where(QuestionnaireConsent.questionnaire_version_id == questionnaire_version_id)
     )
     return bool(consent)
+
+
+def _parse_json_object(value: str | None) -> dict:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _normalize_recipe_template_key(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip().lower()
+    if not value:
+        return None
+    if not _RECIPE_TEMPLATE_KEY_PATTERN.fullmatch(value):
+        return None
+    return value
+
+
+def _resolve_answer_template_for_version(db: Session, *, questionnaire_version_id: str) -> tuple[str, str | None]:
+    config_rows = db.execute(
+        select(Question.config_json)
+        .where(Question.questionnaire_version_id == questionnaire_version_id)
+        .order_by(Question.position)
+    ).scalars().all()
+
+    detected_recipe_type: str | None = None
+    for config_json in config_rows:
+        config = _parse_json_object(config_json)
+        recipe_type = _normalize_recipe_template_key(config.get("recipe_type"))
+        if not recipe_type:
+            continue
+
+        if detected_recipe_type is None:
+            detected_recipe_type = recipe_type
+
+        template_name = f"recipes/{recipe_type}/answer.html"
+        try:
+            templates.env.get_template(template_name)
+            return template_name, recipe_type
+        except TemplateNotFound:
+            continue
+
+    return "answer.html", detected_recipe_type
 
 
 @router.get("/")
@@ -330,12 +384,19 @@ def answer_page(
     ):
         return RedirectResponse(url=f"/answer/{questionnaire_version_id}/consent", status_code=303)
 
+    answer_template_name, detected_recipe_type = _resolve_answer_template_for_version(
+        db,
+        questionnaire_version_id=questionnaire_version_id,
+    )
+
     return templates.TemplateResponse(
         request=request,
-        name="answer.html",
+        name=answer_template_name,
         context={
             **_nav_context(user),
             "questionnaire_version_id": questionnaire_version_id,
+            "answer_layout_mode": "auto",
+            "detected_recipe_type": detected_recipe_type,
         },
     )
 

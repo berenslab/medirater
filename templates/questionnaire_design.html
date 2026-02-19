@@ -464,7 +464,7 @@
                 </select>
               </div>
             </div>
-            <div class="small">Used only by recipes with patch assets. Leave prompt empty to disable patch prompts.</div>
+            <div class="small">Used only by recipes with patch assets. You can leave case-level templates empty and generate patch-only questions from this template.</div>
           </section>
 
           <label for="replace-existing">Replace existing questions when apply</label>
@@ -1076,22 +1076,111 @@
       refreshImagesPerCaseInference();
     }
 
-    async function uploadFiles(files) {
+    function normalizeUploadItems(fileItems) {
+      const selectedFiles = [];
+      for (const item of fileItems || []) {
+        const file = item && item.file ? item.file : item;
+        if (!file || !file.name) {
+          continue;
+        }
+        const relativePathRaw = item && item.relativePath
+          ? item.relativePath
+          : file.webkitRelativePath && file.webkitRelativePath.trim()
+            ? file.webkitRelativePath
+            : file.name;
+        const relativePath = String(relativePathRaw || "").trim().replaceAll("\\", "/");
+        if (!relativePath || relativePath.endsWith("/")) {
+          continue;
+        }
+        selectedFiles.push({ file, relativePath });
+      }
+      return selectedFiles;
+    }
+
+    function fileFromEntry(entry) {
+      return new Promise((resolve, reject) => {
+        entry.file(resolve, reject);
+      });
+    }
+
+    function readAllEntries(reader) {
+      return new Promise((resolve, reject) => {
+        const all = [];
+        function readBatch() {
+          reader.readEntries((entries) => {
+            if (!entries.length) {
+              resolve(all);
+              return;
+            }
+            all.push(...entries);
+            readBatch();
+          }, reject);
+        }
+        readBatch();
+      });
+    }
+
+    async function walkDroppedEntry(entry, prefix = "") {
+      const name = String(entry?.name || "").trim();
+      const pathPrefix = prefix ? `${prefix}/` : "";
+      const currentPath = `${pathPrefix}${name}`.replaceAll("\\", "/");
+
+      if (entry?.isFile) {
+        const file = await fileFromEntry(entry);
+        return [{ file, relativePath: currentPath || file.name }];
+      }
+      if (entry?.isDirectory) {
+        const reader = entry.createReader();
+        const children = await readAllEntries(reader);
+        let all = [];
+        for (const child of children) {
+          const walked = await walkDroppedEntry(child, currentPath);
+          all = all.concat(walked);
+        }
+        return all;
+      }
+      return [];
+    }
+
+    async function collectDroppedUploadItems(dataTransfer) {
+      const items = Array.from(dataTransfer?.items || []);
+      if (!items.length) {
+        return normalizeUploadItems(Array.from(dataTransfer?.files || []));
+      }
+
+      let hasDirectoryEntrySupport = false;
+      const collected = [];
+      for (const item of items) {
+        if (typeof item.webkitGetAsEntry === "function") {
+          const entry = item.webkitGetAsEntry();
+          if (entry) {
+            hasDirectoryEntrySupport = true;
+            const walked = await walkDroppedEntry(entry, "");
+            collected.push(...walked);
+            continue;
+          }
+        }
+        const file = typeof item.getAsFile === "function" ? item.getAsFile() : null;
+        if (file) {
+          collected.push({ file, relativePath: file.name });
+        }
+      }
+
+      if (!hasDirectoryEntrySupport) {
+        return normalizeUploadItems(Array.from(dataTransfer?.files || []));
+      }
+      return normalizeUploadItems(collected);
+    }
+
+    async function uploadFiles(fileItems) {
       if (state.isUploadingAssets) {
         setStatus("upload-status", "Upload already in progress.", "warn");
         return;
       }
 
-      const selectedFiles = [];
-      for (const file of files) {
-        if (!file || !file.size) continue;
-        const relativePath = file.webkitRelativePath && file.webkitRelativePath.trim()
-          ? file.webkitRelativePath.trim().replaceAll("\\", "/")
-          : file.name;
-        selectedFiles.push({ file, relativePath });
-      }
+      const selectedFiles = normalizeUploadItems(fileItems);
       if (!selectedFiles.length) {
-        setStatus("upload-status", "No files selected.", "err");
+        setStatus("upload-status", "No files found. Drop files or a folder containing files.", "err");
         return;
       }
 
@@ -1156,7 +1245,10 @@
       dz.addEventListener("drop", (event) => {
         event.preventDefault();
         dz.classList.remove("dragover");
-        void uploadFiles(Array.from(event.dataTransfer?.files || []));
+        void (async () => {
+          const droppedItems = await collectDroppedUploadItems(event.dataTransfer);
+          await uploadFiles(droppedItems);
+        })();
       });
 
       filesPicker.addEventListener("change", (event) => {
@@ -1296,17 +1388,17 @@
         throw new Error("Upload at least one asset first.");
       }
 
+      const activeRecipe = activeRecipeMeta();
       const templateCards = listBulkTemplateCards();
-      if (!templateCards.length) {
-        throw new Error("Add at least one question template.");
-      }
-
       const hideSeconds = parseStimulusHideSeconds();
+      const patchQuestionTemplate = buildPatchQuestionTemplate(hideSeconds);
 
-      const questionTemplates = templateCards.map((card, index) => {
+      const questionTemplates = [];
+      for (let index = 0; index < templateCards.length; index += 1) {
+        const card = templateCards[index];
         const promptTemplate = card.querySelector("[data-field='prompt']")?.value.trim() || "";
         if (!promptTemplate) {
-          throw new Error(`Prompt template is required for question template ${index + 1}.`);
+          continue;
         }
 
         const questionType = card.querySelector("[data-field='type']")?.value || "single_choice";
@@ -1320,17 +1412,23 @@
           throw new Error(`Text template ${index + 1} cannot include choices.`);
         }
 
-        return {
+        questionTemplates.push({
           prompt_template: promptTemplate,
           question_type: questionType,
           is_required: isRequired,
           choices: parsedChoices,
           config: hideSeconds === null ? {} : { stimulus_hide_after_seconds: hideSeconds },
-        };
-      });
+        });
+      }
+
+      if (!questionTemplates.length) {
+        const canUsePatchOnly = Boolean(activeRecipe?.supports_patch_question_template && patchQuestionTemplate);
+        if (!canUsePatchOnly) {
+          throw new Error("Add at least one case-level question template (or provide a patch question template for patch recipe).");
+        }
+      }
 
       const recipeConfig = buildActiveRecipeConfig();
-      const patchQuestionTemplate = buildPatchQuestionTemplate(hideSeconds);
       return {
         recipe_type: state.activeRecipeType,
         asset_ids: assetIds,

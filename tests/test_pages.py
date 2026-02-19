@@ -186,3 +186,109 @@ def test_superadmin_lands_on_questionnaires_with_expected_nav(test_session_facto
         assert settings.status_code == 200
         assert "Signup mode" in settings.text
         assert "Signup tokens and questionnaire visibility" in settings.text
+
+
+def test_answer_page_uses_recipe_specific_template_when_available(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+
+        created = client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Patch layout dispatch",
+                "description": None,
+                "instructions_markdown": "",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        created_question = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+            json={
+                "position": 1,
+                "prompt_text": "Patch prompt",
+                "question_type": "short_text",
+                "is_required": False,
+                "config": {
+                    "case_key": "case-0001",
+                    "recipe_type": "case_with_patches",
+                    "stimulus_asset_ids": [],
+                    "patch_asset_id": "patch-asset-1",
+                    "patch_index": 1,
+                },
+                "choices": [],
+            },
+        )
+        assert created_question.status_code == 200
+
+        published = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+        )
+        assert published.status_code == 200
+
+        consented = client.post(
+            f"/api/user/questionnaires/{version_id}/consent",
+            json={"consented": True},
+        )
+        assert consented.status_code == 200
+
+        answer_page = client.get(f"/answer/{version_id}")
+        assert answer_page.status_code == 200
+        assert 'const ANSWER_LAYOUT_MODE = "case_and_question_images";' in answer_page.text
+
+
+def test_answer_page_falls_back_to_default_template_for_unknown_recipe(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+
+        created = client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Unknown recipe dispatch",
+                "description": None,
+                "instructions_markdown": "",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        created_question = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+            json={
+                "position": 1,
+                "prompt_text": "Custom recipe prompt",
+                "question_type": "short_text",
+                "is_required": False,
+                "config": {
+                    "case_key": "case-0001",
+                    "recipe_type": "custom_recipe_demo",
+                    "stimulus_asset_ids": [],
+                },
+                "choices": [],
+            },
+        )
+        assert created_question.status_code == 200
+
+        published = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+        )
+        assert published.status_code == 200
+
+        consented = client.post(
+            f"/api/user/questionnaires/{version_id}/consent",
+            json={"consented": True},
+        )
+        assert consented.status_code == 200
+
+        answer_page = client.get(f"/answer/{version_id}")
+        assert answer_page.status_code == 200
+        assert 'const ANSWER_LAYOUT_MODE = "auto";' in answer_page.text

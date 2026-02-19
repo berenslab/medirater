@@ -138,6 +138,24 @@
       text-align: center;
       font-weight: 600;
     }
+    .question-patch {
+      margin: 0 0 8px;
+      display: inline-block;
+    }
+    .question-patch img {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f8fbff;
+      max-width: 220px;
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .question-patch figcaption {
+      margin-top: 4px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
     .magnifier-compact {
       margin-top: 6px;
       border-top: 1px dashed var(--border);
@@ -275,6 +293,7 @@
 
   <script>
     const QUESTIONNAIRE_VERSION_ID = {{ questionnaire_version_id | tojson }};
+    const ANSWER_LAYOUT_MODE = {{ answer_layout_mode | default("auto") | tojson }};
     const DRAFT_STORAGE_KEY = `medirator.answer.draft.${QUESTIONNAIRE_VERSION_ID}`;
 
     const state = {
@@ -615,18 +634,45 @@
       window.location.assign(url.toString());
     }
 
-    function getReferencedAssetIds(question) {
-      const config = question.config || {};
-      const ids = [];
-      if (Array.isArray(config.stimulus_asset_ids)) {
-        for (const id of config.stimulus_asset_ids) {
-          if (typeof id === "string" && id) ids.push(id);
+    function getQuestionPatchAssetId(question) {
+      const patchAssetId = question?.config?.patch_asset_id;
+      if (typeof patchAssetId !== "string") {
+        return null;
+      }
+      const trimmed = patchAssetId.trim();
+      return trimmed || null;
+    }
+
+    function getQuestionRecipeType(question) {
+      const raw = question?.config?.recipe_type;
+      if (typeof raw !== "string") {
+        return null;
+      }
+      const normalized = raw.trim().toLowerCase();
+      return normalized || null;
+    }
+
+    function caseHasPatchQuestion(caseGroup) {
+      for (const question of caseGroup?.questions || []) {
+        if (getQuestionPatchAssetId(question)) {
+          return true;
         }
       }
-      if (typeof config.patch_asset_id === "string" && config.patch_asset_id) {
-        ids.push(config.patch_asset_id);
+      return false;
+    }
+
+    function getCaseLayoutMode(caseGroup) {
+      if (ANSWER_LAYOUT_MODE === "case_images_only" || ANSWER_LAYOUT_MODE === "case_and_question_images") {
+        return ANSWER_LAYOUT_MODE;
       }
-      return ids;
+      const recipeType = String(caseGroup?.recipe_type || "").trim().toLowerCase();
+      if (recipeType === "case_with_patches") {
+        return "case_and_question_images";
+      }
+      if (caseHasPatchQuestion(caseGroup)) {
+        return "case_and_question_images";
+      }
+      return "case_images_only";
     }
 
     function clearStimulusHideTimer() {
@@ -713,10 +759,14 @@
             questions: [],
             asset_ids: [],
             asset_labels_by_id: {},
+            recipe_type: null,
           });
         }
         const group = byKey.get(caseKey);
         group.questions.push(question);
+        if (!group.recipe_type) {
+          group.recipe_type = getQuestionRecipeType(question);
+        }
 
         const stimulusIds = Array.isArray(question?.config?.stimulus_asset_ids)
           ? question.config.stimulus_asset_ids
@@ -727,17 +777,13 @@
         for (let index = 0; index < stimulusIds.length; index += 1) {
           const assetId = stimulusIds[index];
           if (typeof assetId !== "string" || !assetId) continue;
+          if (!group.asset_ids.includes(assetId)) {
+            group.asset_ids.push(assetId);
+          }
           const labelRaw = stimulusLabels[index];
           const label = typeof labelRaw === "string" ? labelRaw.trim() : "";
           if (label && !group.asset_labels_by_id[assetId]) {
             group.asset_labels_by_id[assetId] = label;
-          }
-        }
-
-        const assetIds = getReferencedAssetIds(question);
-        for (const assetId of assetIds) {
-          if (!group.asset_ids.includes(assetId)) {
-            group.asset_ids.push(assetId);
           }
         }
       }
@@ -984,13 +1030,34 @@
       return wrapper;
     }
 
-    function renderQuestionInCase(root, question) {
+    function renderQuestionInCase(root, question, caseGroup) {
       const wrapper = document.createElement("section");
       wrapper.className = "card";
       wrapper.style.margin = "8px 0 0";
       wrapper.innerHTML = `<h2>${question.prompt_text}${question.is_required ? ' <span class="required">*</span>' : ''}</h2>`;
 
       const existing = state.answersByQuestionId.get(question.id);
+      const patchAssetId = getQuestionPatchAssetId(question);
+      const caseLayoutMode = getCaseLayoutMode(caseGroup);
+      if (patchAssetId && caseLayoutMode === "case_and_question_images") {
+        const patchFigure = document.createElement("figure");
+        patchFigure.className = "question-patch";
+        patchFigure.setAttribute("data-stimulus-item", "true");
+
+        const patchImg = document.createElement("img");
+        patchImg.alt = `Patch ${patchAssetId}`;
+        patchImg.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${patchAssetId}/content`;
+        patchFigure.appendChild(patchImg);
+
+        const patchCaption = document.createElement("figcaption");
+        const patchIndexRaw = question?.config?.patch_index;
+        const patchIndex = Number.parseInt(String(patchIndexRaw ?? ""), 10);
+        patchCaption.textContent = Number.isFinite(patchIndex) && patchIndex > 0
+          ? `Patch ${patchIndex}`
+          : "Patch";
+        patchFigure.appendChild(patchCaption);
+        wrapper.appendChild(patchFigure);
+      }
 
       if (question.question_type === "single_choice") {
         for (const choice of question.choices || []) {
@@ -1116,7 +1183,7 @@
       }
 
       for (const question of currentCase.questions) {
-        renderQuestionInCase(root, question);
+        renderQuestionInCase(root, question, currentCase);
       }
 
       document.getElementById("prev-btn").disabled = state.currentCaseIndex === 0;
