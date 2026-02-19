@@ -102,12 +102,89 @@
       gap: 8px;
       align-items: center;
     }
+    .passkey-create {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      padding: 10px;
+    }
+    .passkey-create h3 {
+      margin: 0;
+      font-size: 0.92rem;
+    }
+    .passkey-create-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .passkey-create-row .field {
+      flex: 1 1 320px;
+    }
+    .passkey-list-block {
+      margin-top: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+    .passkey-list-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .passkey-list-head h3 {
+      margin: 0;
+      font-size: 0.92rem;
+    }
+    .passkey-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 8px;
+    }
     .passkey-item {
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 8px;
+      padding: 10px;
       background: #fff;
+    }
+    .passkey-item-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .passkey-item-title {
+      font-weight: 600;
+      color: #1f2a3a;
+      font-size: 0.9rem;
+    }
+    .passkey-chip {
+      font-size: 0.78rem;
+      color: #3a4a5f;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2px 8px;
+      background: #f7fbff;
+    }
+    .passkey-meta {
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      gap: 8px;
+      align-items: baseline;
+      margin-top: 6px;
+      font-size: 0.84rem;
+    }
+    .passkey-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
       margin-top: 8px;
+    }
+    .mono {
+      font-family: ui-monospace, Menlo, Monaco, monospace;
+      word-break: break-all;
     }
     .muted { color: var(--muted); }
     .pill {
@@ -156,15 +233,26 @@
 
       <article class="card">
         <h2>Passkeys</h2>
-        <p>Manage your own passkeys.</p>
-        <label for="passkey-label">New passkey label</label>
-        <input id="passkey-label" maxlength="120" value="Additional passkey" />
-        <div class="row">
-          <button id="add-passkey-btn">Add passkey</button>
-          <button id="refresh-passkeys-btn" class="secondary">Refresh</button>
-        </div>
+        <p>Manage credentials used for passkey login.</p>
+        <section class="passkey-create">
+          <h3>Register new passkey</h3>
+          <div class="passkey-create-row">
+            <div class="field">
+              <label for="passkey-label">Label</label>
+              <input id="passkey-label" maxlength="120" value="Additional passkey" />
+            </div>
+            <button id="add-passkey-btn">Add passkey</button>
+            <button id="refresh-passkeys-btn" class="secondary">Refresh</button>
+          </div>
+        </section>
+        <section class="passkey-list-block">
+          <div class="passkey-list-head">
+            <h3>Saved passkeys</h3>
+            <span id="passkey-count" class="muted"></span>
+          </div>
+          <div id="passkeys-list" class="passkey-list"></div>
+        </section>
         <div id="passkey-status" class="status"></div>
-        <div id="passkeys-list"></div>
       </article>
     </section>
     <div class="footer-actions">
@@ -239,23 +327,63 @@
       return data;
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function formatDate(value, fallback = "-") {
+      if (!value) return fallback;
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return String(value);
+      return parsed.toLocaleString();
+    }
+
     function renderPasskeys(items) {
       const root = document.getElementById("passkeys-list");
+      const count = document.getElementById("passkey-count");
       root.innerHTML = "";
+      count.textContent = `${items.length} saved`;
 
       if (!items.length) {
-        root.innerHTML = '<div class="muted">No passkeys found.</div>';
+        root.innerHTML = '<div class="muted">No saved passkeys.</div>';
         return;
       }
 
       for (const item of items) {
+        const label = item.label || "Passkey";
+        const credentialId = item.credential_id || "";
+        const compactCredential = credentialId.length > 30
+          ? `${credentialId.slice(0, 14)}...${credentialId.slice(-10)}`
+          : credentialId;
+        const createdText = formatDate(item.created_at);
+        const lastUsedText = formatDate(item.last_used_at, "Never");
         const box = document.createElement("div");
         box.className = "passkey-item";
         box.innerHTML = `
-          <div class="muted">Credential: ${item.credential_id}</div>
+          <div class="passkey-item-head">
+            <div class="passkey-item-title">${escapeHtml(label)}</div>
+            <div class="passkey-chip">${item.last_used_at ? "Recently used" : "Not used yet"}</div>
+          </div>
+          <div class="passkey-meta">
+            <span class="muted">Credential</span>
+            <code class="mono" title="${escapeHtml(credentialId)}">${escapeHtml(compactCredential)}</code>
+          </div>
+          <div class="passkey-meta">
+            <span class="muted">Created</span>
+            <span>${escapeHtml(createdText)}</span>
+          </div>
+          <div class="passkey-meta">
+            <span class="muted">Last used</span>
+            <span>${escapeHtml(lastUsedText)}</span>
+          </div>
           <label>Label</label>
-          <input value="${item.label}" data-label-for="${item.id}" maxlength="120" />
-          <div class="row">
+          <input value="${escapeHtml(label)}" data-label-for="${item.id}" maxlength="120" />
+          <div class="passkey-actions">
             <button type="button" data-rename-for="${item.id}">Save label</button>
             <button type="button" class="danger" data-delete-for="${item.id}">Delete passkey</button>
           </div>
