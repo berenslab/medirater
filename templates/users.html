@@ -239,10 +239,11 @@
         <table>
           <thead>
             <tr>
-              <th>ID</th>
               <th>Hint</th>
               <th>Role</th>
-              <th>Scope</th>
+              <th>Visibility</th>
+              <th>Created by</th>
+              <th>Used by</th>
               <th>Expires</th>
               <th>Used</th>
             </tr>
@@ -434,17 +435,24 @@
       tbody.innerHTML = "";
       if (!items.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="6" class="muted">No tokens found.</td>';
+        tr.innerHTML = '<td colspan="7" class="muted">No tokens found.</td>';
         tbody.appendChild(tr);
         return;
       }
       for (const item of items) {
+        const scopes = Array.isArray(item.questionnaire_scope) ? item.questionnaire_scope : [];
+        const visibilityText = scopes.length
+          ? scopes
+              .map((scope) => `${scope.questionnaire_slug} (v${scope.questionnaire_version_number ?? "?"})`)
+              .join(", ")
+          : ((item.questionnaire_version_ids || []).length ? "Unavailable scope" : "-");
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${item.id}</td>
           <td>${item.token_hint}</td>
           <td>${item.role_to_grant}</td>
-          <td>${(item.questionnaire_version_ids || []).join(", ") || "-"}</td>
+          <td>${visibilityText}</td>
+          <td>${item.created_by_username || "-"}</td>
+          <td>${item.used_by_username || "-"}</td>
           <td>${item.expires_at}</td>
           <td>${item.used_at || "-"}</td>
         `;

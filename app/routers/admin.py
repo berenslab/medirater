@@ -28,6 +28,7 @@ from app.schemas import (
     SignupTokenScopeOption,
     SignupTokenScopeOptionsResponse,
     SignupTokenListResponse,
+    SignupTokenScopeSummary,
     SignupTokenSummary,
     UpdateSignupModeRequest,
 )
@@ -227,15 +228,61 @@ def list_signup_tokens(
         stmt = stmt.where(SignupToken.created_by_id == current_user.id)
 
     records = db.execute(stmt).scalars().all()
+
+    creator_ids = {record.created_by_id for record in records if record.created_by_id}
+    used_by_ids = {record.used_by_id for record in records if record.used_by_id}
+    user_ids = {user_id for user_id in creator_ids.union(used_by_ids) if user_id}
+    usernames_by_id: dict[str, str] = {}
+    if user_ids:
+        user_rows = db.execute(select(User.id, User.username).where(User.id.in_(user_ids))).all()
+        usernames_by_id = {user_id: username for user_id, username in user_rows}
+
+    scoped_version_ids: list[str] = []
+    seen_version_ids: set[str] = set()
+    for record in records:
+        for version_id in deserialize_visibility_scope(record.visibility_scope_json):
+            if version_id in seen_version_ids:
+                continue
+            seen_version_ids.add(version_id)
+            scoped_version_ids.append(version_id)
+
+    scope_by_version_id: dict[str, SignupTokenScopeSummary] = {}
+    if scoped_version_ids:
+        version_rows = db.execute(
+            select(
+                QuestionnaireVersion.id,
+                QuestionnaireVersion.version_number,
+                Questionnaire.title,
+                Questionnaire.slug,
+            )
+            .join(Questionnaire, Questionnaire.id == QuestionnaireVersion.questionnaire_id)
+            .where(QuestionnaireVersion.id.in_(scoped_version_ids))
+        ).all()
+        scope_by_version_id = {
+            version_id: SignupTokenScopeSummary(
+                questionnaire_title=questionnaire_title,
+                questionnaire_slug=questionnaire_slug,
+                questionnaire_version_number=version_number,
+            )
+            for version_id, version_number, questionnaire_title, questionnaire_slug in version_rows
+        }
+
     items = [
         SignupTokenSummary(
             id=record.id,
             token_hint=record.token_hint,
             role_to_grant=record.role_to_grant,
+            created_by_username=usernames_by_id.get(record.created_by_id or ""),
+            used_by_username=usernames_by_id.get(record.used_by_id or ""),
             created_at=record.created_at,
             expires_at=record.expires_at,
             used_at=record.used_at,
             questionnaire_version_ids=deserialize_visibility_scope(record.visibility_scope_json),
+            questionnaire_scope=[
+                scope_by_version_id[version_id]
+                for version_id in deserialize_visibility_scope(record.visibility_scope_json)
+                if version_id in scope_by_version_id
+            ],
         )
         for record in records
     ]

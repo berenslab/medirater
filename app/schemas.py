@@ -96,14 +96,23 @@ class CreateSignupTokenResponse(BaseModel):
     questionnaire_version_ids: list[str] = Field(default_factory=list)
 
 
+class SignupTokenScopeSummary(BaseModel):
+    questionnaire_title: str
+    questionnaire_slug: str
+    questionnaire_version_number: int | None = None
+
+
 class SignupTokenSummary(BaseModel):
     id: str
     token_hint: str
     role_to_grant: Role
+    created_by_username: str | None = None
+    used_by_username: str | None = None
     created_at: datetime
     expires_at: datetime
     used_at: datetime | None
     questionnaire_version_ids: list[str] = Field(default_factory=list)
+    questionnaire_scope: list["SignupTokenScopeSummary"] = Field(default_factory=list)
 
 
 class SignupTokenListResponse(BaseModel):
