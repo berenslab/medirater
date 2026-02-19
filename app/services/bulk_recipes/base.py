@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from app.models import Asset
-from app.schemas import BulkRecipeType
+
+RECIPE_TYPE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 @dataclass
@@ -23,7 +25,7 @@ class GroupingResult:
 
 @dataclass
 class RegisteredBulkRecipe:
-    recipe_type: BulkRecipeType
+    recipe_type: str
     title: str
     summary: str
     instructions: list[str]
@@ -31,6 +33,18 @@ class RegisteredBulkRecipe:
     config_keys: list[str]
     supports_patch_question_template: bool
     grouper: Callable[[list[Asset], dict[str, Any]], GroupingResult]
+    catalog_order: int = 1000
+
+
+def normalize_recipe_type(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip().lower()
+    if not value:
+        return None
+    if not RECIPE_TYPE_PATTERN.fullmatch(value):
+        return None
+    return value
 
 
 def asset_path(asset: Asset) -> str:

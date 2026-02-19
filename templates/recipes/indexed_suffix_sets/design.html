@@ -1,0 +1,24 @@
+<label for="recipe-images-per-case">Images per case</label>
+<input
+  id="recipe-images-per-case"
+  type="number"
+  min="1"
+  step="1"
+  placeholder="Auto-inferred from uploaded filenames"
+  data-recipe-config-key="images_per_case"
+  data-config-type="int"
+  data-required="true"
+  data-auto-infer="indexed_suffix_case_size"
+/>
+<div class="small" data-infer-hint-for="images_per_case">Will infer after upload.</div>
+
+<label for="recipe-stimulus-slot-labels">Image labels per slot (optional)</label>
+<input
+  id="recipe-stimulus-slot-labels"
+  placeholder="Original|Annotated or Better|Original|Worse"
+  data-recipe-config-key="stimulus_slot_labels"
+  data-config-type="string_list"
+  data-list-separator="pipe_or_newline_or_comma"
+  data-list-length-equals-config-key="images_per_case"
+/>
+<div class="small">If provided, number of labels must equal images per case.</div>

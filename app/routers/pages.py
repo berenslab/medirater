@@ -1,8 +1,7 @@
 import json
-import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
@@ -20,15 +19,13 @@ from app.models import (
     Role,
     UserAssignment,
 )
+from app.services.bulk_recipes.base import normalize_recipe_type
 from app.services.session_service import get_user_by_session_token
 
 router = APIRouter(include_in_schema=False)
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-
-_RECIPE_TEMPLATE_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-
 
 def _current_user_from_session(request: Request, db: Session, settings: Settings):
     session_token = request.cookies.get(settings.session_cookie_name)
@@ -108,17 +105,6 @@ def _parse_json_object(value: str | None) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _normalize_recipe_template_key(raw: object) -> str | None:
-    if not isinstance(raw, str):
-        return None
-    value = raw.strip().lower()
-    if not value:
-        return None
-    if not _RECIPE_TEMPLATE_KEY_PATTERN.fullmatch(value):
-        return None
-    return value
-
-
 def _resolve_answer_template_for_version(db: Session, *, questionnaire_version_id: str) -> tuple[str, str | None]:
     config_rows = db.execute(
         select(Question.config_json)
@@ -129,7 +115,7 @@ def _resolve_answer_template_for_version(db: Session, *, questionnaire_version_i
     detected_recipe_type: str | None = None
     for config_json in config_rows:
         config = _parse_json_object(config_json)
-        recipe_type = _normalize_recipe_template_key(config.get("recipe_type"))
+        recipe_type = normalize_recipe_type(config.get("recipe_type"))
         if not recipe_type:
             continue
 
@@ -141,9 +127,20 @@ def _resolve_answer_template_for_version(db: Session, *, questionnaire_version_i
             templates.env.get_template(template_name)
             return template_name, recipe_type
         except TemplateNotFound:
-            continue
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Missing answer template for recipe '{recipe_type}'",
+            )
 
-    return "answer.html", detected_recipe_type
+    default_template = "recipes/default/answer.html"
+    try:
+        templates.env.get_template(default_template)
+    except TemplateNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Missing default answer template",
+        )
+    return default_template, detected_recipe_type
 
 
 @router.get("/")

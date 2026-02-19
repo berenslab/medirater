@@ -4,7 +4,6 @@ from collections import defaultdict
 from pathlib import PurePosixPath
 
 from app.models import Asset
-from app.schemas import BulkRecipeType
 from app.services.bulk_recipes.base import (
     GroupedCase,
     GroupingResult,
@@ -62,7 +61,7 @@ def group_assets(assets: list[Asset], recipe_config: dict) -> GroupingResult:
 
 
 RECIPE = RegisteredBulkRecipe(
-    recipe_type=BulkRecipeType.CASE_WITH_PATCHES,
+    recipe_type="case_with_patches",
     title="Case Folder With Patches",
     summary="Use case folders containing main images and patch images for per-patch prompts.",
     instructions=[
@@ -77,4 +76,5 @@ RECIPE = RegisteredBulkRecipe(
     config_keys=["img_folder", "patch_folder", "strict"],
     supports_patch_question_template=True,
     grouper=group_assets,
+    catalog_order=40,
 )

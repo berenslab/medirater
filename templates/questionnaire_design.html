@@ -349,57 +349,8 @@
           <div class="row">
             <button id="change-recipe-btn" class="ghost" type="button">Change recipe</button>
           </div>
-
-          <div data-config-for="indexed_suffix_sets" class="recipe-config-panel hidden">
-            <label for="images-per-case">Images per case</label>
-            <input
-              id="images-per-case"
-              type="number"
-              min="1"
-              step="1"
-              placeholder="Auto-inferred from uploaded filenames"
-            />
-            <div id="images-per-case-hint" class="small">Will infer after upload.</div>
-
-            <label for="stimulus-slot-labels">Image labels per slot (optional)</label>
-            <input
-              id="stimulus-slot-labels"
-              placeholder="Original|Annotated or Better|Original|Worse"
-            />
-            <div class="small">If provided, number of labels must equal images per case.</div>
-          </div>
-
-          <div data-config-for="single_per_file" class="recipe-config-panel hidden">
-            <div class="small">No extra grouping options for this recipe.</div>
-          </div>
-
-          <div data-config-for="paired_by_filename" class="recipe-config-panel hidden">
-            <label for="paired-left-folder">Left folder</label>
-            <input id="paired-left-folder" placeholder="no_support" />
-
-            <label for="paired-right-folder">Right folder</label>
-            <input id="paired-right-folder" placeholder="with_support" />
-
-            <label for="paired-strict">Strict mode</label>
-            <select id="paired-strict">
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
-          </div>
-
-          <div data-config-for="case_with_patches" class="recipe-config-panel hidden">
-            <label for="case-img-folder">Main image folder</label>
-            <input id="case-img-folder" placeholder="img" />
-
-            <label for="case-patch-folder">Patch folder</label>
-            <input id="case-patch-folder" placeholder="patch" />
-
-            <label for="case-patch-strict">Strict mode</label>
-            <select id="case-patch-strict">
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
-          </div>
+          <div id="recipe-config-empty" class="small">Recipe-specific settings will appear after confirmation.</div>
+          <div id="recipe-config-host" class="recipe-config-panel hidden"></div>
 
           <p class="muted">Drop/select files to upload immediately. Uploaded files are selected by default.</p>
 
@@ -582,6 +533,7 @@
       recipes: [],
       selectedRecipeType: null,
       activeRecipeType: null,
+      loadedRecipeDesignType: null,
     };
 
     function setStatus(id, message, mode = "ok") {
@@ -676,13 +628,7 @@
       `;
     }
 
-    function syncRecipeConfigPanels() {
-      const activeType = state.activeRecipeType || "";
-      for (const panel of document.querySelectorAll("[data-config-for]")) {
-        const matches = panel.getAttribute("data-config-for") === activeType;
-        panel.classList.toggle("hidden", !matches);
-      }
-
+    function syncPatchTemplatePanel() {
       const patchPanel = document.getElementById("patch-template-panel");
       const activeRecipe = activeRecipeMeta();
       const showPatchTemplate = Boolean(activeRecipe && activeRecipe.supports_patch_question_template);
@@ -693,6 +639,83 @@
         document.getElementById("patch-type").value = "single_choice";
         document.getElementById("patch-required").value = "true";
       }
+    }
+
+    function recipeConfigHost() {
+      return document.getElementById("recipe-config-host");
+    }
+
+    function recipeConfigFields() {
+      return Array.from(recipeConfigHost().querySelectorAll("[data-recipe-config-key]"));
+    }
+
+    function setRecipeConfigEmptyState() {
+      const hasActiveRecipe = Boolean(state.activeRecipeType);
+      const host = recipeConfigHost();
+      const empty = document.getElementById("recipe-config-empty");
+
+      if (!hasActiveRecipe) {
+        host.classList.add("hidden");
+        empty.classList.remove("hidden");
+        empty.textContent = "Recipe-specific settings will appear after confirmation.";
+        return;
+      }
+
+      if (state.loadedRecipeDesignType !== state.activeRecipeType) {
+        host.classList.add("hidden");
+        empty.classList.remove("hidden");
+        empty.textContent = "Loading recipe settings...";
+        return;
+      }
+
+      host.classList.remove("hidden");
+      const hasContent = host.textContent.trim().length > 0;
+      if (hasContent) {
+        empty.classList.add("hidden");
+      } else {
+        empty.classList.remove("hidden");
+        empty.textContent = "No extra settings for this recipe.";
+      }
+    }
+
+    async function loadRecipeDesignFragment(recipeType) {
+      if (!recipeType) {
+        throw new Error("Recipe type is required.");
+      }
+
+      const host = recipeConfigHost();
+      if (state.loadedRecipeDesignType === recipeType && host.getAttribute("data-recipe-type") === recipeType) {
+        refreshRecipeAutoInference();
+        setRecipeConfigEmptyState();
+        return;
+      }
+
+      state.loadedRecipeDesignType = null;
+      host.innerHTML = "";
+      host.setAttribute("data-recipe-type", "");
+      setRecipeConfigEmptyState();
+
+      const response = await fetch(
+        `/api/admin/questionnaires/bulk-recipes/${encodeURIComponent(recipeType)}/design`,
+        { credentials: "include" },
+      );
+      if (!response.ok) {
+        let detail = "";
+        try {
+          const errorPayload = await response.json();
+          detail = errorPayload.detail || "";
+        } catch (_error) {
+          detail = "";
+        }
+        throw new Error(detail || `Failed to load recipe design (${response.status})`);
+      }
+
+      const html = await response.text();
+      host.innerHTML = html;
+      host.setAttribute("data-recipe-type", recipeType);
+      state.loadedRecipeDesignType = recipeType;
+      refreshRecipeAutoInference();
+      setRecipeConfigEmptyState();
     }
 
     function syncRecipeWorkspace() {
@@ -710,7 +733,8 @@
       document.getElementById("workspace-recipe-label").textContent = confirmed
         ? `Using recipe: ${confirmed.title}`
         : "";
-      syncRecipeConfigPanels();
+      syncPatchTemplatePanel();
+      setRecipeConfigEmptyState();
       syncDraftControls();
     }
 
@@ -995,21 +1019,37 @@
       };
     }
 
-    function refreshImagesPerCaseInference() {
-      const input = document.getElementById("images-per-case");
-      const hint = document.getElementById("images-per-case-hint");
-      const inferred = inferImagesPerCaseFromAssets(state.assets || []);
+    function refreshRecipeAutoInference() {
+      const host = recipeConfigHost();
+      const fields = recipeConfigFields();
+      for (const field of fields) {
+        const configKey = String(field.getAttribute("data-recipe-config-key") || "").trim();
+        const inferType = String(field.getAttribute("data-auto-infer") || "").trim();
+        if (!configKey || !inferType) {
+          continue;
+        }
 
-      if (!inferred) {
-        input.value = "";
-        hint.textContent = "Could not infer yet. Use filenames like 1.png or 1a.png/1b.png.";
-        return;
+        const hint = host.querySelector(`[data-infer-hint-for="${configKey}"]`);
+        if (inferType === "indexed_suffix_case_size") {
+          const inferred = inferImagesPerCaseFromAssets(state.assets || []);
+          if (!inferred) {
+            if (hint) {
+              hint.textContent = "Could not infer yet. Use filenames like 1.png or 1a.png/1b.png.";
+            }
+            continue;
+          }
+
+          const current = String(field.value || "").trim();
+          if (!current) {
+            field.value = String(inferred.imagesPerCase);
+          }
+          if (hint) {
+            hint.textContent = inferred.consistent
+              ? `Auto-inferred ${inferred.imagesPerCase} image(s) per case from ${inferred.caseCount} case(s).`
+              : `Auto-inferred ${inferred.imagesPerCase} image(s) per case (mixed set sizes detected).`;
+          }
+        }
       }
-
-      input.value = String(inferred.imagesPerCase);
-      hint.textContent = inferred.consistent
-        ? `Auto-inferred ${inferred.imagesPerCase} image(s) per case from ${inferred.caseCount} case(s).`
-        : `Auto-inferred ${inferred.imagesPerCase} image(s) per case (mixed set sizes detected).`;
     }
 
     function renderPreview() {
@@ -1073,7 +1113,7 @@
       const items = await requestJson(`/api/admin/assets?limit=500&questionnaire_id=${encodeURIComponent(QUESTIONNAIRE_ID)}`);
       state.assets = items || [];
       renderAssets();
-      refreshImagesPerCaseInference();
+      refreshRecipeAutoInference();
     }
 
     function normalizeUploadItems(fileItems) {
@@ -1257,80 +1297,176 @@
       });
     }
 
-    function parseBooleanSelect(value, defaultValue = true) {
-      if (value === "true") return true;
-      if (value === "false") return false;
-      return defaultValue;
+    function parseBooleanText(value, fieldLabel) {
+      const normalized = String(value || "").trim().toLowerCase();
+      if (["true", "1", "yes", "y"].includes(normalized)) return true;
+      if (["false", "0", "no", "n"].includes(normalized)) return false;
+      throw new Error(`${fieldLabel} must be true or false.`);
+    }
+
+    function parseStringList(raw, separatorMode) {
+      const text = String(raw || "");
+      let segments = [];
+      if (!text.trim()) {
+        return [];
+      }
+
+      if (separatorMode === "newline") {
+        segments = text.split("\n");
+      } else if (separatorMode === "pipe") {
+        segments = text.split("|");
+      } else if (separatorMode === "comma") {
+        segments = text.split(",");
+      } else if (text.includes("\n")) {
+        segments = text.split("\n");
+      } else if (text.includes("|")) {
+        segments = text.split("|");
+      } else {
+        segments = text.split(",");
+      }
+      return segments.map((item) => item.trim()).filter(Boolean);
+    }
+
+    function resolveRecipeFieldLabel(field, configKey) {
+      const explicitLabel = String(field.getAttribute("data-field-label") || "").trim();
+      if (explicitLabel) {
+        return explicitLabel;
+      }
+
+      const fieldId = field.getAttribute("id");
+      if (fieldId) {
+        const labelNode = recipeConfigHost().querySelector(`label[for="${fieldId}"]`);
+        if (labelNode && labelNode.textContent.trim()) {
+          return labelNode.textContent.trim();
+        }
+      }
+      return configKey;
+    }
+
+    function parseRecipeConfigFieldValue(field, configKey) {
+      const fieldLabel = resolveRecipeFieldLabel(field, configKey);
+      const typeHint = String(field.getAttribute("data-config-type") || "").trim().toLowerCase();
+      const fieldType = String(field.getAttribute("type") || "").trim().toLowerCase();
+      const isRequired = field.required || String(field.getAttribute("data-required") || "").trim() === "true";
+      const allowEmpty = String(field.getAttribute("data-allow-empty") || "").trim() === "true";
+      const defaultValue = field.getAttribute("data-default-value");
+      let rawValue = fieldType === "checkbox"
+        ? (field.checked ? "true" : "false")
+        : String(field.value || "").trim();
+
+      if (!rawValue && defaultValue !== null) {
+        rawValue = String(defaultValue).trim();
+        if (fieldType !== "checkbox") {
+          field.value = rawValue;
+        }
+      }
+
+      if (!rawValue && String(field.getAttribute("data-auto-infer") || "") === "indexed_suffix_case_size") {
+        const inferred = inferImagesPerCaseFromAssets(state.assets || []);
+        if (inferred) {
+          rawValue = String(inferred.imagesPerCase);
+          if (fieldType !== "checkbox") {
+            field.value = rawValue;
+          }
+        }
+      }
+
+      if (!rawValue) {
+        if (isRequired && !allowEmpty) {
+          throw new Error(`${fieldLabel} is required.`);
+        }
+        if (allowEmpty) {
+          return { include: true, value: "" };
+        }
+        return { include: false, value: null };
+      }
+
+      if (typeHint === "int" || typeHint === "integer") {
+        const parsed = Number.parseInt(rawValue, 10);
+        if (!Number.isFinite(parsed)) {
+          throw new Error(`${fieldLabel} must be an integer.`);
+        }
+        return { include: true, value: parsed };
+      }
+
+      if (typeHint === "float" || typeHint === "number") {
+        const parsed = Number.parseFloat(rawValue);
+        if (!Number.isFinite(parsed)) {
+          throw new Error(`${fieldLabel} must be a number.`);
+        }
+        return { include: true, value: parsed };
+      }
+
+      if (typeHint === "boolean" || fieldType === "checkbox") {
+        return { include: true, value: parseBooleanText(rawValue, fieldLabel) };
+      }
+
+      if (typeHint === "string_list") {
+        const separatorMode = String(field.getAttribute("data-list-separator") || "").trim().toLowerCase();
+        const values = parseStringList(rawValue, separatorMode || "pipe_or_newline_or_comma");
+        if (isRequired && values.length === 0) {
+          throw new Error(`${fieldLabel} must include at least one value.`);
+        }
+        if (!values.length && !allowEmpty) {
+          return { include: false, value: null };
+        }
+        return { include: true, value: values };
+      }
+
+      if (typeHint === "json") {
+        try {
+          return { include: true, value: JSON.parse(rawValue) };
+        } catch (_error) {
+          throw new Error(`${fieldLabel} must be valid JSON.`);
+        }
+      }
+
+      return { include: true, value: rawValue };
     }
 
     function buildActiveRecipeConfig() {
-      const recipeType = state.activeRecipeType;
-      if (!recipeType) {
+      if (!state.activeRecipeType) {
         throw new Error("Confirm a recipe first.");
       }
+      if (state.loadedRecipeDesignType !== state.activeRecipeType) {
+        throw new Error("Recipe settings are still loading. Confirm recipe again.");
+      }
 
-      if (recipeType === "indexed_suffix_sets") {
-        const imagesPerCaseRaw = document.getElementById("images-per-case").value.trim();
-        let imagesPerCase = Number.parseInt(imagesPerCaseRaw || "", 10);
-        if (!Number.isFinite(imagesPerCase) || imagesPerCase < 1) {
-          const inferred = inferImagesPerCaseFromAssets(state.assets || []);
-          if (inferred) {
-            imagesPerCase = inferred.imagesPerCase;
-            document.getElementById("images-per-case").value = String(imagesPerCase);
+      refreshRecipeAutoInference();
+
+      const config = {};
+      const fields = recipeConfigFields();
+      for (const field of fields) {
+        const configKey = String(field.getAttribute("data-recipe-config-key") || "").trim();
+        if (!configKey) {
+          continue;
+        }
+        const parsed = parseRecipeConfigFieldValue(field, configKey);
+        if (parsed.include) {
+          config[configKey] = parsed.value;
+        }
+      }
+
+      for (const field of fields) {
+        const configKey = String(field.getAttribute("data-recipe-config-key") || "").trim();
+        if (!configKey || !Object.prototype.hasOwnProperty.call(config, configKey)) {
+          continue;
+        }
+        const targetKey = String(field.getAttribute("data-list-length-equals-config-key") || "").trim();
+        if (!targetKey || !Object.prototype.hasOwnProperty.call(config, targetKey)) {
+          continue;
+        }
+        const sourceValue = config[configKey];
+        const targetValue = config[targetKey];
+        if (Array.isArray(sourceValue) && sourceValue.length > 0 && Number.isFinite(targetValue)) {
+          if (sourceValue.length !== Number(targetValue)) {
+            const sourceLabel = resolveRecipeFieldLabel(field, configKey);
+            throw new Error(`${sourceLabel} count must equal ${targetKey}.`);
           }
         }
-        if (!Number.isFinite(imagesPerCase) || imagesPerCase < 1) {
-          throw new Error("Could not infer images per case. Use filenames like 1.png or 1a/1b.");
-        }
-
-        const rawLabels = document.getElementById("stimulus-slot-labels").value || "";
-        const labelSource = rawLabels.includes("\n")
-          ? rawLabels.split("\n")
-          : rawLabels.includes("|")
-            ? rawLabels.split("|")
-            : rawLabels.split(",");
-        const slotLabels = labelSource.map((item) => item.trim()).filter(Boolean);
-        if (slotLabels.length && slotLabels.length !== imagesPerCase) {
-          throw new Error("Image labels count must equal images per case.");
-        }
-
-        return {
-          images_per_case: imagesPerCase,
-          ...(slotLabels.length ? { stimulus_slot_labels: slotLabels } : {}),
-        };
       }
 
-      if (recipeType === "single_per_file") {
-        return {};
-      }
-
-      if (recipeType === "paired_by_filename") {
-        const leftFolder = document.getElementById("paired-left-folder").value.trim() || "no_support";
-        const rightFolder = document.getElementById("paired-right-folder").value.trim() || "with_support";
-        if (!leftFolder || !rightFolder) {
-          throw new Error("Left and right folder names are required.");
-        }
-        return {
-          left_folder: leftFolder,
-          right_folder: rightFolder,
-          strict: parseBooleanSelect(document.getElementById("paired-strict").value, true),
-        };
-      }
-
-      if (recipeType === "case_with_patches") {
-        const imgFolder = document.getElementById("case-img-folder").value.trim() || "img";
-        const patchFolder = document.getElementById("case-patch-folder").value.trim() || "patch";
-        if (!imgFolder || !patchFolder) {
-          throw new Error("Main image and patch folder names are required.");
-        }
-        return {
-          img_folder: imgFolder,
-          patch_folder: patchFolder,
-          strict: parseBooleanSelect(document.getElementById("case-patch-strict").value, true),
-        };
-      }
-
-      throw new Error(`Unsupported recipe type: ${recipeType}`);
+      return config;
     }
 
     function parseStimulusHideSeconds() {
@@ -1472,19 +1608,22 @@
       addBulkTemplate();
     });
 
-    document.getElementById("confirm-recipe-btn").addEventListener("click", () => {
+    document.getElementById("confirm-recipe-btn").addEventListener("click", async () => {
       const selected = selectedRecipeMeta();
       if (!selected) {
         setStatus("recipe-status", "Select a recipe first.", "err");
         return;
       }
-      state.activeRecipeType = selected.recipe_type;
-      state.previewCases = [];
-      renderPreview();
-      syncRecipeWorkspace();
-      setStatus("recipe-status", `Confirmed recipe: ${selected.title}`, "ok");
-      if (state.activeRecipeType === "indexed_suffix_sets") {
-        refreshImagesPerCaseInference();
+      try {
+        setStatus("recipe-status", "Loading recipe workspace...", "ok");
+        await loadRecipeDesignFragment(selected.recipe_type);
+        state.activeRecipeType = selected.recipe_type;
+        state.previewCases = [];
+        renderPreview();
+        syncRecipeWorkspace();
+        setStatus("recipe-status", `Confirmed recipe: ${selected.title}`, "ok");
+      } catch (error) {
+        setStatus("recipe-status", error.message || String(error), "err");
       }
     });
 

@@ -1,3 +1,4 @@
+{% set answer_layout_mode = "auto" %}
 <!doctype html>
 <html lang="en" translate="no">
 <head>
@@ -27,7 +28,7 @@
       padding: 20px;
     }
     .container {
-      max-width: 980px;
+      max-width: 1320px;
       margin: 0 auto;
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -138,24 +139,6 @@
       text-align: center;
       font-weight: 600;
     }
-    .question-patch {
-      margin: 0 0 8px;
-      display: inline-block;
-    }
-    .question-patch img {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #f8fbff;
-      max-width: 220px;
-      width: 100%;
-      height: auto;
-      display: block;
-    }
-    .question-patch figcaption {
-      margin-top: 4px;
-      font-size: 0.82rem;
-      color: var(--muted);
-    }
     .magnifier-compact {
       margin-top: 6px;
       border-top: 1px dashed var(--border);
@@ -256,7 +239,7 @@
   </style>
 </head>
 <body>
-  <div style="max-width:980px;margin:0 auto 10px;"><a href="/" style="font-size:0.95rem;color:var(--accent);text-decoration:none;text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">medirator</a></div>
+  <div style="max-width:1320px;margin:0 auto 10px;"><a href="/" style="font-size:0.95rem;color:var(--accent);text-decoration:none;text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">medirator</a></div>
   <main class="container">
     <section class="header">
       <div>
@@ -634,47 +617,6 @@
       window.location.assign(url.toString());
     }
 
-    function getQuestionPatchAssetId(question) {
-      const patchAssetId = question?.config?.patch_asset_id;
-      if (typeof patchAssetId !== "string") {
-        return null;
-      }
-      const trimmed = patchAssetId.trim();
-      return trimmed || null;
-    }
-
-    function getQuestionRecipeType(question) {
-      const raw = question?.config?.recipe_type;
-      if (typeof raw !== "string") {
-        return null;
-      }
-      const normalized = raw.trim().toLowerCase();
-      return normalized || null;
-    }
-
-    function caseHasPatchQuestion(caseGroup) {
-      for (const question of caseGroup?.questions || []) {
-        if (getQuestionPatchAssetId(question)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    function getCaseLayoutMode(caseGroup) {
-      if (ANSWER_LAYOUT_MODE === "case_images_only" || ANSWER_LAYOUT_MODE === "case_and_question_images") {
-        return ANSWER_LAYOUT_MODE;
-      }
-      const recipeType = String(caseGroup?.recipe_type || "").trim().toLowerCase();
-      if (recipeType === "case_with_patches") {
-        return "case_and_question_images";
-      }
-      if (caseHasPatchQuestion(caseGroup)) {
-        return "case_and_question_images";
-      }
-      return "case_images_only";
-    }
-
     function clearStimulusHideTimer() {
       if (state.stimulusHideTimerId !== null) {
         window.clearTimeout(state.stimulusHideTimerId);
@@ -759,14 +701,10 @@
             questions: [],
             asset_ids: [],
             asset_labels_by_id: {},
-            recipe_type: null,
           });
         }
         const group = byKey.get(caseKey);
         group.questions.push(question);
-        if (!group.recipe_type) {
-          group.recipe_type = getQuestionRecipeType(question);
-        }
 
         const stimulusIds = Array.isArray(question?.config?.stimulus_asset_ids)
           ? question.config.stimulus_asset_ids
@@ -1030,34 +968,13 @@
       return wrapper;
     }
 
-    function renderQuestionInCase(root, question, caseGroup) {
+    function renderQuestionInCase(question) {
       const wrapper = document.createElement("section");
       wrapper.className = "card";
       wrapper.style.margin = "8px 0 0";
       wrapper.innerHTML = `<h2>${question.prompt_text}${question.is_required ? ' <span class="required">*</span>' : ''}</h2>`;
 
       const existing = state.answersByQuestionId.get(question.id);
-      const patchAssetId = getQuestionPatchAssetId(question);
-      const caseLayoutMode = getCaseLayoutMode(caseGroup);
-      if (patchAssetId && caseLayoutMode === "case_and_question_images") {
-        const patchFigure = document.createElement("figure");
-        patchFigure.className = "question-patch";
-        patchFigure.setAttribute("data-stimulus-item", "true");
-
-        const patchImg = document.createElement("img");
-        patchImg.alt = `Patch ${patchAssetId}`;
-        patchImg.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${patchAssetId}/content`;
-        patchFigure.appendChild(patchImg);
-
-        const patchCaption = document.createElement("figcaption");
-        const patchIndexRaw = question?.config?.patch_index;
-        const patchIndex = Number.parseInt(String(patchIndexRaw ?? ""), 10);
-        patchCaption.textContent = Number.isFinite(patchIndex) && patchIndex > 0
-          ? `Patch ${patchIndex}`
-          : "Patch";
-        patchFigure.appendChild(patchCaption);
-        wrapper.appendChild(patchFigure);
-      }
 
       if (question.question_type === "single_choice") {
         for (const choice of question.choices || []) {
@@ -1103,7 +1020,65 @@
         wrapper.appendChild(textarea);
       }
 
-      root.appendChild(wrapper);
+      return wrapper;
+    }
+
+    function renderCaseMediaSection(target, caseGroup) {
+      if (!target || !caseGroup?.asset_ids?.length) {
+        return;
+      }
+
+      const strip = document.createElement("div");
+      strip.className = "media-strip";
+      const mediaEntries = [];
+      const sourceImages = [];
+      for (const assetId of caseGroup.asset_ids) {
+        const item = document.createElement("figure");
+        item.className = "media-item";
+        item.setAttribute("data-stimulus-item", "true");
+
+        const img = document.createElement("img");
+        img.alt = `Case asset ${assetId}`;
+        img.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${assetId}/content`;
+        item.appendChild(img);
+        sourceImages.push(img);
+
+        const labelText = caseGroup.asset_labels_by_id?.[assetId];
+        const label = typeof labelText === "string" && labelText.trim() ? labelText.trim() : "";
+        if (typeof labelText === "string" && labelText.trim()) {
+          const caption = document.createElement("figcaption");
+          caption.className = "media-label";
+          caption.textContent = labelText.trim();
+          item.appendChild(caption);
+        }
+
+        mediaEntries.push({ src: img.src, label });
+        strip.appendChild(item);
+      }
+      target.appendChild(strip);
+
+      const magnifierPanel = createSynchronizedMagnifier({ mediaEntries, sourceImages });
+      target.appendChild(magnifierPanel);
+    }
+
+    function applyStimulusHideTimer(caseGroup, root) {
+      const hideAfterSeconds = getCaseStimulusHideSeconds(caseGroup);
+      if (hideAfterSeconds === null) {
+        return;
+      }
+      const hideNote = document.createElement("div");
+      hideNote.className = "muted";
+      hideNote.style.margin = "6px 0 0";
+      hideNote.textContent = `Images will be hidden after ${hideAfterSeconds} seconds.`;
+      root.appendChild(hideNote);
+
+      state.stimulusHideTimerId = window.setTimeout(() => {
+        for (const item of root.querySelectorAll("[data-stimulus-item]")) {
+          item.style.visibility = "hidden";
+        }
+        hideNote.textContent = "Images are hidden.";
+        state.stimulusHideTimerId = null;
+      }, hideAfterSeconds * 1000);
     }
 
     function renderCurrentCase() {
@@ -1130,61 +1105,11 @@
       const root = document.getElementById("question-root");
       root.innerHTML = "";
 
-      if (currentCase.asset_ids.length) {
-        const strip = document.createElement("div");
-        strip.className = "media-strip";
-        const mediaEntries = [];
-        const sourceImages = [];
-        for (const assetId of currentCase.asset_ids) {
-          const item = document.createElement("figure");
-          item.className = "media-item";
-          item.setAttribute("data-stimulus-item", "true");
-
-          const img = document.createElement("img");
-          img.alt = `Case asset ${assetId}`;
-          img.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${assetId}/content`;
-          item.appendChild(img);
-          sourceImages.push(img);
-
-          const labelText = currentCase.asset_labels_by_id?.[assetId];
-          const label = typeof labelText === "string" && labelText.trim() ? labelText.trim() : "";
-          if (typeof labelText === "string" && labelText.trim()) {
-            const caption = document.createElement("figcaption");
-            caption.className = "media-label";
-            caption.textContent = labelText.trim();
-            item.appendChild(caption);
-          }
-
-          mediaEntries.push({ src: img.src, label });
-
-          strip.appendChild(item);
-        }
-        root.appendChild(strip);
-
-        const magnifierPanel = createSynchronizedMagnifier({ mediaEntries, sourceImages });
-        root.appendChild(magnifierPanel);
-
-        const hideAfterSeconds = getCaseStimulusHideSeconds(currentCase);
-        if (hideAfterSeconds !== null) {
-          const hideNote = document.createElement("div");
-          hideNote.className = "muted";
-          hideNote.style.margin = "6px 0 0";
-          hideNote.textContent = `Images will be hidden after ${hideAfterSeconds} seconds.`;
-          root.appendChild(hideNote);
-
-          state.stimulusHideTimerId = window.setTimeout(() => {
-            for (const item of root.querySelectorAll("[data-stimulus-item]")) {
-              item.style.visibility = "hidden";
-            }
-            hideNote.textContent = "Images are hidden.";
-            state.stimulusHideTimerId = null;
-          }, hideAfterSeconds * 1000);
-        }
-      }
-
+      renderCaseMediaSection(root, currentCase);
       for (const question of currentCase.questions) {
-        renderQuestionInCase(root, question, currentCase);
+        root.appendChild(renderQuestionInCase(question));
       }
+      applyStimulusHideTimer(currentCase, root);
 
       document.getElementById("prev-btn").disabled = state.currentCaseIndex === 0;
       document.getElementById("next-btn").textContent = state.currentCaseIndex === total - 1

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from app.models import Asset
-from app.schemas import BulkRecipeType
 from app.services.bulk_recipes.base import (
     GroupedCase,
     GroupingResult,
@@ -24,7 +23,7 @@ def group_assets(assets: list[Asset], recipe_config: dict) -> GroupingResult:
 
 
 RECIPE = RegisteredBulkRecipe(
-    recipe_type=BulkRecipeType.SINGLE_PER_FILE,
+    recipe_type="single_per_file",
     title="Single Image Per Case",
     summary="Each uploaded image becomes one case.",
     instructions=[
@@ -38,4 +37,5 @@ RECIPE = RegisteredBulkRecipe(
     config_keys=[],
     supports_patch_question_template=False,
     grouper=group_assets,
+    catalog_order=20,
 )

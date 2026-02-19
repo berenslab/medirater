@@ -1,11 +1,14 @@
-import json
 import csv
 import io
+import json
 import re
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import Response as FastAPIResponse
+from fastapi.responses import HTMLResponse, Response as FastAPIResponse
+from fastapi.templating import Jinja2Templates
+from jinja2 import TemplateNotFound
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
@@ -54,10 +57,13 @@ from app.schemas import (
     QuestionnaireVersionUpdateRequest,
 )
 from app.security import normalize_username
+from app.services.bulk_recipes import get_registered_bulk_recipe
 from app.services.bulk_recipe_service import GroupedCase, group_assets_for_recipe, list_bulk_recipes
 from app.services.consent_service import normalize_optional_consent_text
 
 router = APIRouter(prefix="/api/admin/questionnaires", tags=["questionnaires"])
+TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 def _is_superadmin(user: User) -> bool:
@@ -91,6 +97,10 @@ def _stringify_answer_value(value: Any) -> str:
     if isinstance(value, str):
         return value
     return json.dumps(value)
+
+
+def _recipe_design_template_name(recipe_type: str) -> str:
+    return f"recipes/{recipe_type}/design.html"
 
 
 def _normalize_slug(raw_slug: str) -> str:
@@ -537,6 +547,33 @@ def list_bulk_recipe_catalog(
         )
         for recipe in list_bulk_recipes()
     ]
+
+
+@router.get("/bulk-recipes/{recipe_type}/design", response_class=HTMLResponse)
+def get_bulk_recipe_design_fragment(
+    recipe_type: str,
+    current_user: User = Depends(get_admin_user),
+) -> HTMLResponse:
+    del current_user
+
+    recipe = get_registered_bulk_recipe(recipe_type)
+    if recipe is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown bulk recipe: {recipe_type}",
+        )
+
+    template_name = _recipe_design_template_name(recipe.recipe_type)
+    try:
+        template = templates.env.get_template(template_name)
+    except TemplateNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Missing design template for recipe '{recipe.recipe_type}'",
+        )
+
+    html = template.render(recipe_type=recipe.recipe_type)
+    return HTMLResponse(content=html)
 
 
 @router.get("/{questionnaire_id}", response_model=QuestionnaireDetailOut)
@@ -1313,7 +1350,7 @@ def preview_bulk_recipe(
         grouped_cases=grouping_result.cases,
         question_templates=payload.question_templates,
         patch_question_template=payload.patch_question_template,
-        recipe_type=payload.recipe_type.value,
+        recipe_type=payload.recipe_type,
         recipe_config=payload.recipe_config,
     )
     return BulkRecipePreviewResponse(cases=preview_cases, warnings=grouping_result.warnings)
@@ -1355,7 +1392,7 @@ def apply_bulk_recipe(
         grouped_cases=grouping_result.cases,
         question_templates=payload.question_templates,
         patch_question_template=payload.patch_question_template,
-        recipe_type=payload.recipe_type.value,
+        recipe_type=payload.recipe_type,
         recipe_config=payload.recipe_config,
     )
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from app.models import Asset
-from app.schemas import BulkRecipeType
 from app.services.bulk_recipes import (
     GroupedCase,
     GroupingResult,
@@ -12,7 +11,7 @@ from app.services.bulk_recipes import (
 
 def group_assets_for_recipe(
     *,
-    recipe_type: BulkRecipeType,
+    recipe_type: str,
     assets: list[Asset],
     recipe_config: dict,
 ) -> GroupingResult:

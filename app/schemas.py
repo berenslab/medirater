@@ -1,5 +1,4 @@
 from datetime import datetime
-from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -367,15 +366,11 @@ class AssetOut(BaseModel):
     created_at: datetime
 
 
-class BulkRecipeType(str, Enum):
-    INDEXED_SUFFIX_SETS = "indexed_suffix_sets"
-    SINGLE_PER_FILE = "single_per_file"
-    PAIRED_BY_FILENAME = "paired_by_filename"
-    CASE_WITH_PATCHES = "case_with_patches"
+BULK_RECIPE_TYPE_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,63}$"
 
 
 class BulkRecipeCatalogItemOut(BaseModel):
-    recipe_type: BulkRecipeType
+    recipe_type: str = Field(pattern=BULK_RECIPE_TYPE_PATTERN)
     title: str
     summary: str
     instructions: list[str] = Field(default_factory=list)
@@ -398,7 +393,7 @@ class BulkRecipeQuestionTemplate(BaseModel):
 
 
 class BulkRecipePreviewRequest(BaseModel):
-    recipe_type: BulkRecipeType
+    recipe_type: str = Field(pattern=BULK_RECIPE_TYPE_PATTERN)
     asset_ids: list[str] = Field(min_length=1)
     recipe_config: dict[str, Any] = Field(default_factory=dict)
     question_templates: list[BulkRecipeQuestionTemplate] = Field(default_factory=list)

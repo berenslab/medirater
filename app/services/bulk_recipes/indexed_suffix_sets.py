@@ -5,7 +5,6 @@ from collections import defaultdict
 from pathlib import PurePosixPath
 
 from app.models import Asset
-from app.schemas import BulkRecipeType
 from app.services.bulk_recipes.base import (
     GroupedCase,
     GroupingResult,
@@ -104,7 +103,7 @@ def group_assets(assets: list[Asset], recipe_config: dict) -> GroupingResult:
 
 
 RECIPE = RegisteredBulkRecipe(
-    recipe_type=BulkRecipeType.INDEXED_SUFFIX_SETS,
+    recipe_type="indexed_suffix_sets",
     title="Numbered Image Sets",
     summary="Group files by case index with optional suffix letters (e.g. 1a, 1b, 1c).",
     instructions=[
@@ -121,4 +120,5 @@ RECIPE = RegisteredBulkRecipe(
     config_keys=["images_per_case", "stimulus_slot_labels"],
     supports_patch_question_template=False,
     grouper=group_assets,
+    catalog_order=10,
 )

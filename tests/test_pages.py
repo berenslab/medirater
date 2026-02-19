@@ -242,7 +242,7 @@ def test_answer_page_uses_recipe_specific_template_when_available(test_session_f
         assert 'const ANSWER_LAYOUT_MODE = "case_and_question_images";' in answer_page.text
 
 
-def test_answer_page_falls_back_to_default_template_for_unknown_recipe(test_session_factory) -> None:
+def test_answer_page_requires_template_for_unknown_recipe(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 
     with TestClient(app) as client:
@@ -290,5 +290,5 @@ def test_answer_page_falls_back_to_default_template_for_unknown_recipe(test_sess
         assert consented.status_code == 200
 
         answer_page = client.get(f"/answer/{version_id}")
-        assert answer_page.status_code == 200
-        assert 'const ANSWER_LAYOUT_MODE = "auto";' in answer_page.text
+        assert answer_page.status_code == 500
+        assert answer_page.json()["detail"] == "Missing answer template for recipe 'custom_recipe_demo'"

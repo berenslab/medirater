@@ -4,7 +4,6 @@ from collections import defaultdict
 from pathlib import PurePosixPath
 
 from app.models import Asset
-from app.schemas import BulkRecipeType
 from app.services.bulk_recipes.base import (
     GroupedCase,
     GroupingResult,
@@ -51,7 +50,7 @@ def group_assets(assets: list[Asset], recipe_config: dict) -> GroupingResult:
 
 
 RECIPE = RegisteredBulkRecipe(
-    recipe_type=BulkRecipeType.PAIRED_BY_FILENAME,
+    recipe_type="paired_by_filename",
     title="Paired Comparison Folders",
     summary="Pair same filename from two sibling folders (e.g. no_support vs with_support).",
     instructions=[
@@ -66,4 +65,5 @@ RECIPE = RegisteredBulkRecipe(
     config_keys=["left_folder", "right_folder", "strict"],
     supports_patch_question_template=False,
     grouper=group_assets,
+    catalog_order=30,
 )

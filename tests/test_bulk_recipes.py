@@ -84,6 +84,14 @@ def test_bulk_recipe_catalog_lists_supported_recipes(test_session_factory) -> No
         assert by_type["case_with_patches"]["supports_patch_question_template"] is True
         assert by_type["case_with_patches"]["example_paths"]
 
+        for recipe_type in by_type:
+            design = client.get(f"/api/admin/questionnaires/bulk-recipes/{recipe_type}/design")
+            assert design.status_code == 200
+            assert design.text.strip()
+
+        unknown_design = client.get("/api/admin/questionnaires/bulk-recipes/unknown_recipe/design")
+        assert unknown_design.status_code == 404
+
 
 def test_assets_are_scoped_to_questionnaire(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
