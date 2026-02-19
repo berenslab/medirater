@@ -127,10 +127,13 @@
       margin: 0;
     }
     .media-strip img {
-      width: 100%;
+      width: auto;
+      max-width: 100%;
+      height: auto;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: #f8fbff;
+      display: block;
     }
     .media-label {
       margin-top: 4px;
@@ -147,8 +150,8 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       background: #f8fbff;
-      max-width: 220px;
-      width: 100%;
+      max-width: min(100%, 220px);
+      width: auto;
       height: auto;
       display: block;
     }
