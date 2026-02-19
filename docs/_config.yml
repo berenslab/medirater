@@ -1,0 +1,4 @@
+title: Medirater Docs
+description: Documentation for local run, deployment, API, and recipe extension.
+theme: minima
+markdown: kramdown

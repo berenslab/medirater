@@ -59,3 +59,7 @@ Use that token at:
 After creating the first superadmin account, manage signup mode and invite tokens from:
 
 - `http://localhost:8000/users`
+
+## Extended docs
+
+For installation details, deployment notes, API overview, and recipe extension examples, see `docs/`.
