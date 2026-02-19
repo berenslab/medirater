@@ -25,6 +25,7 @@ from app.schemas import (
     SignupModeResponse,
     SignupBeginRequest,
     SignupCompleteRequest,
+    UpdateAccountRequest,
     UserOut,
     WebAuthnBeginResponse,
 )
@@ -338,4 +339,53 @@ def logout(
 
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)) -> UserOut:
+    return UserOut.model_validate(current_user)
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(
+    payload: UpdateAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserOut:
+    if not payload.model_fields_set:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one field (username or year_of_experience) must be provided",
+        )
+
+    if "username" in payload.model_fields_set:
+        next_username = normalize_username(payload.username or "")
+        try:
+            validate_username(next_username)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        if next_username != current_user.username:
+            existing_user = db.scalar(select(User).where(User.username == next_username))
+            if existing_user and existing_user.id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username is already taken",
+                )
+            current_user.username = next_username
+
+    if "year_of_experience" in payload.model_fields_set:
+        if current_user.role == Role.USER and payload.year_of_experience is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="year_of_experience is required for user role",
+            )
+        current_user.year_of_experience = payload.year_of_experience
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Account update failed due to concurrent update",
+        ) from exc
+
+    db.refresh(current_user)
     return UserOut.model_validate(current_user)

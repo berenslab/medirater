@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="google" content="notranslate" />
+  <meta http-equiv="Content-Language" content="en" />
+  <title>medirator</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --panel: #ffffff;
+      --text: #1a2330;
+      --muted: #56657a;
+      --accent: #0a6c7e;
+      --border: #d7e1ea;
+      --ok: #1f7a45;
+      --err: #b42318;
+      --danger: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20px;
+    }
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.2rem; }
+    h2 { margin: 0 0 10px; font-size: 1rem; }
+    .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
+    nav { display: flex; gap: 10px; }
+    nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+    .stack {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fcfdff;
+      padding: 12px;
+    }
+    p { margin: 0 0 8px; color: var(--muted); font-size: 0.9rem; }
+    label {
+      display: block;
+      margin: 8px 0 4px;
+      font-size: 0.88rem;
+      color: #334357;
+    }
+    input, select, textarea, button {
+      font: inherit;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button.secondary { background: #4d5f70; }
+    button.danger { background: var(--danger); }
+    .status { margin-top: 8px; min-height: 18px; font-size: 0.9rem; }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .passkey-item {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fff;
+      margin-top: 8px;
+    }
+    .muted { color: var(--muted); }
+    .pill {
+      display: inline-block;
+      border-radius: 20px;
+      border: 1px solid #d7e1ea;
+      background: #f5fafc;
+      padding: 2px 8px;
+      font-size: 0.8rem;
+      color: #355268;
+    }
+  </style>
+</head>
+<body>
+  <div style="max-width:1080px;margin:0 auto 10px;"><a href="/" style="font-size:1.15rem;color:var(--accent);text-decoration:none;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">medirator</a></div>
+  <main class="container">
+    <section class="header">
+      <div>
+        <h1>Account Settings</h1>
+        <div id="whoami" class="meta">Loading user...</div>
+      </div>
+      <nav>
+        {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
+        {% if show_users_link %}<a href="/users">Users</a>{% endif %}
+        {% if show_assigned_link %}<a href="/assigned">Assigned</a>{% endif %}
+        {% if show_account_link %}<a href="/account">Account</a>{% endif %}
+      </nav>
+    </section>
+
+    <section class="stack">
+      <article class="card">
+        <h2>Profile</h2>
+        <p>Username must stay unique. Years of experience is required for role <code>user</code>.</p>
+        <div id="role-badge" class="pill">Role: -</div>
+
+        <label for="username">Username</label>
+        <input id="username" name="username" maxlength="32" autocomplete="username" />
+
+        <label for="yoe">Years of experience</label>
+        <input id="yoe" name="yoe" type="number" min="0" max="80" inputmode="numeric" placeholder="e.g. 5" />
+
+        <div class="row">
+          <button id="save-account-btn">Save account</button>
+        </div>
+        <div id="account-status" class="status"></div>
+      </article>
+
+      <article class="card">
+        <h2>Passkeys</h2>
+        <p>Manage your own passkeys.</p>
+        <label for="passkey-label">New passkey label</label>
+        <input id="passkey-label" maxlength="120" value="Additional passkey" />
+        <div class="row">
+          <button id="add-passkey-btn">Add passkey</button>
+          <button id="refresh-passkeys-btn" class="secondary">Refresh</button>
+          <button id="logout-btn" class="danger">Logout</button>
+        </div>
+        <div id="passkey-status" class="status"></div>
+        <div id="passkeys-list"></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      me: null,
+    };
+
+    function setStatus(id, message, ok) {
+      const el = document.getElementById(id);
+      el.className = ok ? "status ok" : "status err";
+      el.textContent = message || "";
+    }
+
+    function base64urlToUint8Array(base64url) {
+      const pad = "=".repeat((4 - (base64url.length % 4)) % 4);
+      const base64 = (base64url + pad).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) {
+        bytes[i] = raw.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    function uint8ArrayToBase64url(bytes) {
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 1) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    }
+
+    function serializeRegistrationCredential(credential) {
+      return {
+        id: credential.id,
+        rawId: uint8ArrayToBase64url(new Uint8Array(credential.rawId)),
+        type: credential.type,
+        response: {
+          attestationObject: uint8ArrayToBase64url(new Uint8Array(credential.response.attestationObject)),
+          clientDataJSON: uint8ArrayToBase64url(new Uint8Array(credential.response.clientDataJSON)),
+          transports: credential.response.getTransports ? credential.response.getTransports() : [],
+        },
+        clientExtensionResults: credential.getClientExtensionResults
+          ? credential.getClientExtensionResults()
+          : {},
+      };
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = {};
+      }
+      if (!response.ok) {
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      return data;
+    }
+
+    function renderPasskeys(items) {
+      const root = document.getElementById("passkeys-list");
+      root.innerHTML = "";
+
+      if (!items.length) {
+        root.innerHTML = '<div class="muted">No passkeys found.</div>';
+        return;
+      }
+
+      for (const item of items) {
+        const box = document.createElement("div");
+        box.className = "passkey-item";
+        box.innerHTML = `
+          <div class="muted">Credential: ${item.credential_id}</div>
+          <label>Label</label>
+          <input value="${item.label}" data-label-for="${item.id}" maxlength="120" />
+          <div class="row">
+            <button type="button" data-rename-for="${item.id}">Save label</button>
+            <button type="button" class="danger" data-delete-for="${item.id}">Delete passkey</button>
+          </div>
+        `;
+        root.appendChild(box);
+      }
+
+      for (const btn of root.querySelectorAll("[data-rename-for]")) {
+        btn.addEventListener("click", async (event) => {
+          const passkeyId = event.currentTarget.getAttribute("data-rename-for");
+          const input = root.querySelector(`[data-label-for='${passkeyId}']`);
+          const label = (input?.value || "").trim();
+          try {
+            if (!label) throw new Error("Label cannot be empty.");
+            await requestJson(`/api/passkeys/${passkeyId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ label }),
+            });
+            setStatus("passkey-status", "Passkey label updated.", true);
+            await loadPasskeys();
+          } catch (error) {
+            setStatus("passkey-status", error.message || String(error), false);
+          }
+        });
+      }
+
+      for (const btn of root.querySelectorAll("[data-delete-for]")) {
+        btn.addEventListener("click", async (event) => {
+          const passkeyId = event.currentTarget.getAttribute("data-delete-for");
+          try {
+            await requestJson(`/api/passkeys/${passkeyId}`, { method: "DELETE" });
+            setStatus("passkey-status", "Passkey deleted.", true);
+            await loadPasskeys();
+          } catch (error) {
+            setStatus("passkey-status", error.message || String(error), false);
+          }
+        });
+      }
+    }
+
+    async function loadPasskeys() {
+      try {
+        const items = await requestJson("/api/passkeys");
+        renderPasskeys(items || []);
+      } catch (error) {
+        renderPasskeys([]);
+        setStatus("passkey-status", error.message || String(error), false);
+      }
+    }
+
+    function applyMe(me) {
+      state.me = me;
+      document.getElementById("whoami").textContent = `Signed in as ${me.username} (${me.role})`;
+      document.getElementById("role-badge").textContent = `Role: ${me.role}`;
+      document.getElementById("username").value = me.username || "";
+      document.getElementById("yoe").value = me.year_of_experience ?? "";
+
+      if (me.role === "user" && me.year_of_experience == null) {
+        setStatus("account-status", "Years of experience is required before you can continue.", false);
+      }
+    }
+
+    async function loadMe() {
+      const me = await requestJson("/api/auth/me");
+      applyMe(me);
+      return me;
+    }
+
+    document.getElementById("save-account-btn").addEventListener("click", async () => {
+      try {
+        const username = (document.getElementById("username").value || "").trim();
+        const yoeRaw = (document.getElementById("yoe").value || "").trim();
+
+        if (!username) {
+          throw new Error("Username is required.");
+        }
+
+        let yoe = null;
+        if (yoeRaw !== "") {
+          const parsed = Number(yoeRaw);
+          if (!Number.isInteger(parsed) || parsed < 0 || parsed > 80) {
+            throw new Error("Years of experience must be an integer between 0 and 80.");
+          }
+          yoe = parsed;
+        }
+
+        if (state.me?.role === "user" && yoe == null) {
+          throw new Error("Years of experience is required for user role.");
+        }
+
+        const updated = await requestJson("/api/auth/me", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username,
+            year_of_experience: yoe,
+          }),
+        });
+
+        applyMe(updated);
+        setStatus("account-status", "Account updated.", true);
+      } catch (error) {
+        setStatus("account-status", error.message || String(error), false);
+      }
+    });
+
+    document.getElementById("refresh-passkeys-btn").addEventListener("click", loadPasskeys);
+
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await requestJson("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    });
+
+    document.getElementById("add-passkey-btn").addEventListener("click", async () => {
+      try {
+        if (!window.PublicKeyCredential || !navigator.credentials) {
+          throw new Error("Passkeys are not supported in this browser.");
+        }
+
+        const begin = await requestJson("/api/passkeys/begin-add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+
+        const publicKeyOptions = begin.public_key;
+        publicKeyOptions.challenge = base64urlToUint8Array(publicKeyOptions.challenge);
+        publicKeyOptions.user.id = base64urlToUint8Array(publicKeyOptions.user.id);
+        publicKeyOptions.excludeCredentials = (publicKeyOptions.excludeCredentials || []).map((item) => ({
+          ...item,
+          id: base64urlToUint8Array(item.id),
+        }));
+
+        const credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
+        if (!credential || !credential.rawId) {
+          throw new Error("Failed to create passkey credential.");
+        }
+
+        const label = (document.getElementById("passkey-label").value || "").trim() || "Additional passkey";
+
+        await requestJson("/api/passkeys/complete-add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            challenge_id: begin.challenge_id,
+            credential: serializeRegistrationCredential(credential),
+            label,
+          }),
+        });
+
+        setStatus("passkey-status", "Passkey added.", true);
+        await loadPasskeys();
+      } catch (error) {
+        setStatus("passkey-status", error.message || String(error), false);
+      }
+    });
+
+    async function init() {
+      try {
+        await loadMe();
+      } catch (error) {
+        document.getElementById("whoami").textContent = error.message || String(error);
+      }
+      await loadPasskeys();
+    }
+
+    init();
+  </script>
+</body>
+</html>

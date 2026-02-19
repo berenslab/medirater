@@ -76,6 +76,31 @@ def test_username_is_unique_case_insensitive() -> None:
         assert duplicate.status_code == 409
 
 
+def test_account_update_username_uniqueness_and_yoe_requirement() -> None:
+    with TestClient(app) as alice_client, TestClient(app) as bob_client:
+        _signup(alice_client, "alice")
+        _signup(bob_client, "bob")
+
+        conflict = alice_client.patch("/api/auth/me", json={"username": "bob"})
+        assert conflict.status_code == 409
+
+        missing_yoe = alice_client.patch("/api/auth/me", json={"year_of_experience": None})
+        assert missing_yoe.status_code == 400
+
+        updated = alice_client.patch(
+            "/api/auth/me",
+            json={"username": "alice.updated", "year_of_experience": 7},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["username"] == "alice.updated"
+        assert updated.json()["year_of_experience"] == 7
+
+        me = alice_client.get("/api/auth/me")
+        assert me.status_code == 200
+        assert me.json()["username"] == "alice.updated"
+        assert me.json()["year_of_experience"] == 7
+
+
 def test_invite_only_mode_blocks_public_signup_without_token_and_user_invite_requires_scope(
     test_session_factory,
 ) -> None:

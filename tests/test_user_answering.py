@@ -48,6 +48,15 @@ def _bootstrap_superadmin_token(test_session_factory) -> str:
         return token
 
 
+def _complete_profile(client: TestClient, username: str, yoe: int = 1) -> None:
+    updated = client.patch(
+        "/api/auth/me",
+        json={"username": username, "year_of_experience": yoe},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["year_of_experience"] == yoe
+
+
 def test_user_can_open_assigned_questionnaire_and_submit_response(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 
@@ -110,6 +119,7 @@ def test_user_can_open_assigned_questionnaire_and_submit_response(test_session_f
 
     with TestClient(app) as user_client:
         _signup(user_client, "alice", token=user_token.json()["token"])
+        _complete_profile(user_client, "alice", yoe=5)
 
         assigned = user_client.get("/api/user/assigned-questionnaires")
         assert assigned.status_code == 200

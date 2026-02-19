@@ -55,6 +55,7 @@ class User(Base):
     role: Mapped[Role] = mapped_column(
         SAEnum(Role, name="role_enum"), default=Role.USER, index=True
     )
+    year_of_experience: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

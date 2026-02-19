@@ -36,6 +36,12 @@ def ensure_runtime_schema(engine: Engine) -> None:
         if "slug" not in column_names:
             conn.exec_driver_sql("ALTER TABLE questionnaires ADD COLUMN slug VARCHAR(220)")
 
+        user_table_info = conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()
+        if user_table_info:
+            user_column_names = {row[1] for row in user_table_info}
+            if "year_of_experience" not in user_column_names:
+                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN year_of_experience INTEGER")
+
         rows = conn.exec_driver_sql("SELECT id, title, slug FROM questionnaires").fetchall()
         used_slugs: set[str] = set()
         updates: list[tuple[str, str]] = []

@@ -44,21 +44,45 @@
       flex-wrap: wrap;
     }
     h1 { margin: 0; font-size: 1.2rem; }
+    h2 { margin: 0 0 10px; font-size: 1rem; }
     .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
     nav { display: flex; gap: 10px; }
     nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
-    .content {
+    .stack {
+      display: grid;
+      gap: 12px;
       padding: 14px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fcfdff;
+      padding: 12px;
     }
     .toolbar {
       display: flex;
       justify-content: space-between;
-      gap: 10px;
       align-items: center;
+      gap: 10px;
       flex-wrap: wrap;
+      margin-bottom: 8px;
     }
-    button, select {
+    p { margin: 0 0 8px; color: var(--muted); font-size: 0.9rem; }
+    label {
+      display: block;
+      margin: 8px 0 4px;
+      font-size: 0.88rem;
+      color: #334357;
+    }
+    input, select, button {
       font: inherit;
+    }
+    input, select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
     }
     button {
       border: 0;
@@ -68,12 +92,7 @@
       color: #fff;
       cursor: pointer;
     }
-    select {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 6px 8px;
-      background: #fff;
-    }
+    button.secondary { background: #4d5f70; }
     .status {
       margin-top: 8px;
       min-height: 18px;
@@ -81,6 +100,12 @@
     }
     .ok { color: var(--ok); }
     .err { color: var(--err); }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -95,51 +120,149 @@
       word-break: break-word;
     }
     .muted { color: var(--muted); }
+    .scope-list {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px;
+      max-height: 260px;
+      overflow: auto;
+      display: grid;
+      gap: 6px;
+    }
+    .scope-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      border: 1px solid #e5edf4;
+      border-radius: 8px;
+      padding: 8px;
+      background: #fbfdff;
+    }
+    .scope-option input {
+      width: auto;
+      margin-top: 2px;
+      flex: 0 0 auto;
+    }
+    .scope-option strong {
+      display: block;
+      font-size: 0.9rem;
+    }
+    .scope-option .muted {
+      font-size: 0.82rem;
+      margin-top: 2px;
+    }
   </style>
 </head>
 <body>
-  <div style="max-width:1080px;margin:0 auto 10px;"><a href="/" style="font-size:0.95rem;color:var(--accent);text-decoration:none;text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">medirator</a></div>
+  <div style="max-width:1080px;margin:0 auto 10px;"><a href="/" style="font-size:1.15rem;color:var(--accent);text-decoration:none;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">medirator</a></div>
   <main class="container">
     <section class="header">
       <div>
-        <h1>User Management</h1>
+        <h1>Users</h1>
         <div id="whoami" class="meta">Loading user...</div>
       </div>
       <nav>
         {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
         {% if show_users_link %}<a href="/users">Users</a>{% endif %}
         {% if show_assigned_link %}<a href="/assigned">Assigned</a>{% endif %}
-        {% if show_settings_link %}<a href="/settings">Settings</a>{% endif %}
+        {% if show_account_link %}<a href="/account">Account</a>{% endif %}
       </nav>
     </section>
 
-    <section class="content">
-      <div class="toolbar">
-        <div class="muted">Superadmin can change role and active state for any user.</div>
-        <button id="refresh-btn">Refresh users</button>
-      </div>
-      <div id="status" class="status"></div>
+    <section class="stack">
+      <article class="card" id="user-management-card" style="display:none;">
+        <div class="toolbar">
+          <h2 style="margin:0;">User Management</h2>
+          <button id="refresh-users-btn" class="secondary" type="button">Refresh users</button>
+        </div>
+        <p>Superadmin can change role and active state for any user.</p>
+        <div id="user-status" class="status"></div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Username</th>
-            <th>Role</th>
-            <th>Active</th>
-            <th>Created</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
+        <table>
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>YOE</th>
+              <th>Active</th>
+              <th>Created</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+      </article>
+
+      <article class="card" id="signup-mode-card" style="display:none;">
+        <h2>Signup mode</h2>
+        <p>Superadmin controls whether public user signup is open or invite-only.</p>
+        <label for="mode-select">Public user signup mode</label>
+        <select id="mode-select">
+          <option value="open">open</option>
+          <option value="invite_only">invite_only</option>
+        </select>
+        <button id="save-mode-btn" type="button">Save mode</button>
+        <div id="mode-status" class="status"></div>
+      </article>
+
+      <article class="card" id="invite-card" style="display:none;">
+        <h2>Signup tokens and questionnaire visibility</h2>
+        <p>Create invite tokens and set questionnaire visibility for new accounts.</p>
+
+        <div class="row">
+          <div style="flex:1;min-width:180px;">
+            <label for="token-role">Role</label>
+            <select id="token-role">
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+              <option value="superadmin">superadmin</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:180px;">
+            <label for="token-expiry">Expires in minutes</label>
+            <input id="token-expiry" type="number" min="1" max="43200" value="60" />
+          </div>
+        </div>
+
+        <label>Questionnaire visibility</label>
+        <div id="token-scope-options" class="scope-list"></div>
+        <div id="token-scope-hint" class="muted"></div>
+
+        <div class="row" style="margin-top:8px;">
+          <button id="create-token-btn" type="button">Create token</button>
+          <button id="refresh-tokens-btn" type="button" class="secondary">Refresh list</button>
+        </div>
+
+        <div id="token-status" class="status"></div>
+        <div id="token-output" style="display:none;border:1px solid var(--border);border-radius:8px;padding:8px;background:#fff;font-family:ui-monospace,Menlo,monospace;"></div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Hint</th>
+              <th>Role</th>
+              <th>Scope</th>
+              <th>Expires</th>
+              <th>Used</th>
+            </tr>
+          </thead>
+          <tbody id="tokens-tbody"></tbody>
+        </table>
+      </article>
     </section>
   </main>
 
   <script>
-    const state = { me: null, users: [] };
+    const state = {
+      me: null,
+      users: [],
+      tokenScopeOptions: [],
+    };
 
-    function setStatus(message, ok) {
-      const el = document.getElementById("status");
+    function setStatus(id, message, ok) {
+      const el = document.getElementById(id);
       el.className = ok ? "status ok" : "status err";
       el.textContent = message || "";
     }
@@ -159,12 +282,12 @@
     }
 
     function renderUsers() {
-      const tbody = document.getElementById("tbody");
+      const tbody = document.getElementById("users-tbody");
       tbody.innerHTML = "";
 
       if (!state.users.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="5" class="muted">No users found.</td>';
+        tr.innerHTML = '<td colspan="6" class="muted">No users found.</td>';
         tbody.appendChild(tr);
         return;
       }
@@ -181,6 +304,7 @@
               <option value="superadmin" ${user.role === "superadmin" ? "selected" : ""}>superadmin</option>
             </select>
           </td>
+          <td>${user.year_of_experience == null ? "-" : user.year_of_experience}</td>
           <td>
             <select data-active-for="${user.username}" ${isSelf ? "disabled" : ""}>
               <option value="true" ${user.is_active ? "selected" : ""}>true</option>
@@ -209,23 +333,138 @@
                 is_active: isActiveValue === "true",
               }),
             });
-            setStatus("User updated.", true);
+            setStatus("user-status", "User updated.", true);
             await loadUsers();
           } catch (error) {
-            setStatus(error.message || String(error), false);
+            setStatus("user-status", error.message || String(error), false);
           }
         });
       }
     }
 
     async function loadUsers() {
+      if (state.me?.role !== "superadmin") {
+        return;
+      }
       try {
         state.users = await requestJson("/api/admin/users");
         renderUsers();
       } catch (error) {
         state.users = [];
         renderUsers();
-        setStatus(error.message || String(error), false);
+        setStatus("user-status", error.message || String(error), false);
+      }
+    }
+
+    function getSelectedScopeVersionIds() {
+      return Array.from(document.querySelectorAll("input[name='token-scope-version']:checked"))
+        .map((input) => input.value)
+        .filter(Boolean);
+    }
+
+    function renderTokenScopeOptions(items) {
+      const wrap = document.getElementById("token-scope-options");
+      const previousSelection = new Set(getSelectedScopeVersionIds());
+      wrap.innerHTML = "";
+
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "No published questionnaires available.";
+        wrap.appendChild(empty);
+        return;
+      }
+
+      for (const item of items) {
+        const row = document.createElement("label");
+        row.className = "scope-option";
+        const checked = previousSelection.has(item.questionnaire_version_id) ? "checked" : "";
+        const ownerText = state.me?.role === "superadmin"
+          ? `Owner: ${item.questionnaire_owner_username}`
+          : `Published version: v${item.questionnaire_version_number}`;
+        row.innerHTML = `
+          <input type="checkbox" name="token-scope-version" value="${item.questionnaire_version_id}" ${checked} />
+          <div>
+            <strong>${item.questionnaire_title}</strong>
+            <div class="muted">v${item.questionnaire_version_number} | ${ownerText}</div>
+          </div>
+        `;
+        wrap.appendChild(row);
+      }
+    }
+
+    async function loadTokenScopeOptions() {
+      try {
+        const response = await requestJson("/api/admin/signup-token-scope-options");
+        state.tokenScopeOptions = response.items || [];
+        renderTokenScopeOptions(state.tokenScopeOptions);
+      } catch (error) {
+        state.tokenScopeOptions = [];
+        renderTokenScopeOptions([]);
+        setStatus("token-status", error.message || String(error), false);
+      }
+    }
+
+    function syncTokenRole() {
+      const role = document.getElementById("token-role").value;
+      const supportsScope = role !== "superadmin";
+      for (const input of document.querySelectorAll("input[name='token-scope-version']")) {
+        input.disabled = !supportsScope;
+      }
+      if (role === "user") {
+        document.getElementById("token-scope-hint").textContent =
+          "Select one or more questionnaires for this user token.";
+      } else if (role === "admin") {
+        document.getElementById("token-scope-hint").textContent =
+          "Optional: select questionnaires this admin should immediately access.";
+      } else {
+        document.getElementById("token-scope-hint").textContent =
+          "Questionnaire visibility is not applicable for superadmin tokens.";
+      }
+    }
+
+    function renderTokenRows(items) {
+      const tbody = document.getElementById("tokens-tbody");
+      tbody.innerHTML = "";
+      if (!items.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="6" class="muted">No tokens found.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+      for (const item of items) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${item.id}</td>
+          <td>${item.token_hint}</td>
+          <td>${item.role_to_grant}</td>
+          <td>${(item.questionnaire_version_ids || []).join(", ") || "-"}</td>
+          <td>${item.expires_at}</td>
+          <td>${item.used_at || "-"}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function loadTokens() {
+      try {
+        const list = await requestJson("/api/admin/signup-tokens");
+        renderTokenRows(list.items || []);
+      } catch (error) {
+        setStatus("token-status", error.message || String(error), false);
+      }
+    }
+
+    async function loadMode() {
+      if (state.me?.role !== "superadmin") {
+        return;
+      }
+      try {
+        const modeResp = await requestJson("/api/admin/settings/public-signup-mode");
+        document.getElementById("mode-select").value = modeResp.mode;
+        setStatus("mode-status", `Current mode: ${modeResp.mode}`, true);
+      } catch (error) {
+        setStatus("mode-status", error.message || String(error), false);
       }
     }
 
@@ -233,13 +472,87 @@
       try {
         state.me = await requestJson("/api/auth/me");
         document.getElementById("whoami").textContent = `Signed in as ${state.me.username} (${state.me.role})`;
+
+        document.getElementById("invite-card").style.display = "block";
+        if (state.me.role === "superadmin") {
+          document.getElementById("user-management-card").style.display = "block";
+          document.getElementById("signup-mode-card").style.display = "block";
+        }
+
+        if (state.me.role === "admin") {
+          const roleSelect = document.getElementById("token-role");
+          for (const opt of roleSelect.options) {
+            if (opt.value !== "user") opt.disabled = true;
+          }
+          roleSelect.value = "user";
+        }
       } catch (error) {
         document.getElementById("whoami").textContent = error.message || String(error);
       }
+
       await loadUsers();
+      await loadMode();
+      await loadTokenScopeOptions();
+      syncTokenRole();
+      await loadTokens();
     }
 
-    document.getElementById("refresh-btn").addEventListener("click", loadUsers);
+    document.getElementById("refresh-users-btn").addEventListener("click", loadUsers);
+
+    document.getElementById("save-mode-btn").addEventListener("click", async () => {
+      try {
+        const mode = document.getElementById("mode-select").value;
+        await requestJson("/api/admin/settings/public-signup-mode", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        });
+        setStatus("mode-status", `Saved mode: ${mode}`, true);
+      } catch (error) {
+        setStatus("mode-status", error.message || String(error), false);
+      }
+    });
+
+    document.getElementById("token-role").addEventListener("change", syncTokenRole);
+
+    document.getElementById("create-token-btn").addEventListener("click", async () => {
+      const tokenOutput = document.getElementById("token-output");
+      tokenOutput.style.display = "none";
+      tokenOutput.textContent = "";
+
+      try {
+        const role = document.getElementById("token-role").value;
+        const expires = Number(document.getElementById("token-expiry").value || 60);
+        const scope = role === "superadmin" ? [] : getSelectedScopeVersionIds();
+
+        if (role === "user" && scope.length === 0) {
+          throw new Error("User tokens require at least one selected questionnaire.");
+        }
+
+        const created = await requestJson("/api/admin/signup-tokens", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            role,
+            expires_in_minutes: expires,
+            questionnaire_version_ids: scope,
+          }),
+        });
+
+        setStatus("token-status", "Token created. Copy it now (shown once).", true);
+        tokenOutput.style.display = "block";
+        tokenOutput.textContent = created.token;
+        await loadTokens();
+      } catch (error) {
+        setStatus("token-status", error.message || String(error), false);
+      }
+    });
+
+    document.getElementById("refresh-tokens-btn").addEventListener("click", async () => {
+      await loadTokenScopeOptions();
+      syncTokenRole();
+      await loadTokens();
+    });
 
     init();
   </script>

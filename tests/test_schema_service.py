@@ -29,6 +29,14 @@ def test_runtime_schema_adds_version_consent_text_and_backfills(tmp_path) -> Non
         )
         conn.exec_driver_sql(
             """
+            CREATE TABLE users (
+                id VARCHAR(36) PRIMARY KEY,
+                username VARCHAR(64)
+            )
+            """
+        )
+        conn.exec_driver_sql(
+            """
             INSERT INTO questionnaires (id, title, slug, consent_text)
             VALUES ('q1', 'OCT Reader', 'oct-reader', 'Legacy consent text')
             """
@@ -55,3 +63,8 @@ def test_runtime_schema_adds_version_consent_text_and_backfills(tmp_path) -> Non
         assert row is not None
         assert row[0] == "Legacy consent text"
 
+        user_columns = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()
+        }
+        assert "year_of_experience" in user_columns

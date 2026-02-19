@@ -49,7 +49,13 @@ class UserOut(BaseModel):
 
     username: str
     role: Role
+    year_of_experience: int | None
     created_at: datetime
+
+
+class UpdateAccountRequest(BaseModel):
+    username: str | None = Field(default=None, min_length=3, max_length=64)
+    year_of_experience: int | None = Field(default=None, ge=0, le=80)
 
 
 class AuthSessionResponse(BaseModel):
@@ -123,6 +129,7 @@ class AdminManagedUserOut(BaseModel):
 
     username: str
     role: Role
+    year_of_experience: int | None
     is_active: bool
     created_at: datetime
 

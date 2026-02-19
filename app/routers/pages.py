@@ -35,6 +35,8 @@ def _current_user_from_session(request: Request, db: Session, settings: Settings
 
 
 def _landing_url_for(user) -> str:
+    if _requires_account_completion(user):
+        return "/account"
     if user and user.role in {Role.ADMIN, Role.SUPERADMIN}:
         return "/questionnaires"
     return "/assigned"
@@ -44,9 +46,10 @@ def _nav_context(user) -> dict[str, bool]:
     is_admin = bool(user and user.role in {Role.ADMIN, Role.SUPERADMIN})
     return {
         "show_questionnaires_link": is_admin,
-        "show_users_link": bool(user and user.role == Role.SUPERADMIN),
+        "show_users_link": is_admin,
         "show_assigned_link": bool(user and user.role in {Role.USER, Role.ADMIN}),
-        "show_settings_link": bool(user),
+        "show_account_link": bool(user),
+        "show_settings_link": False,
     }
 
 
@@ -103,6 +106,18 @@ def _parse_json_object(value: str | None) -> dict:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _requires_account_completion(user) -> bool:
+    return bool(user and user.role == Role.USER and user.year_of_experience is None)
+
+
+def _redirect_if_account_completion_required(user, *, current_path: str) -> RedirectResponse | None:
+    if not _requires_account_completion(user):
+        return None
+    if current_path == "/account":
+        return None
+    return RedirectResponse(url="/account", status_code=303)
 
 
 def _resolve_answer_template_for_version(db: Session, *, questionnaire_version_id: str) -> tuple[str, str | None]:
@@ -232,6 +247,10 @@ def questionnaires_page(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
+    redirect = _redirect_if_account_completion_required(user, current_path="/questionnaires")
+    if redirect:
+        return redirect
+
     if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
         return RedirectResponse(url=_landing_url_for(user), status_code=303)
 
@@ -254,6 +273,13 @@ def questionnaire_design_page(
     user = _current_user_from_session(request, db, settings)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
+
+    redirect = _redirect_if_account_completion_required(
+        user,
+        current_path=f"/questionnaires/{questionnaire_id}/design",
+    )
+    if redirect:
+        return redirect
 
     if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
         return RedirectResponse(url=_landing_url_for(user), status_code=303)
@@ -286,6 +312,13 @@ def questionnaire_responses_page(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
+    redirect = _redirect_if_account_completion_required(
+        user,
+        current_path=f"/questionnaires/{questionnaire_id}/responses",
+    )
+    if redirect:
+        return redirect
+
     if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
         return RedirectResponse(url=_landing_url_for(user), status_code=303)
 
@@ -317,6 +350,13 @@ def questionnaire_assignments_page(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
+    redirect = _redirect_if_account_completion_required(
+        user,
+        current_path=f"/questionnaires/{questionnaire_id}/assignments",
+    )
+    if redirect:
+        return redirect
+
     if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
         return RedirectResponse(url=_landing_url_for(user), status_code=303)
 
@@ -347,6 +387,10 @@ def assigned_page(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
+    redirect = _redirect_if_account_completion_required(user, current_path="/assigned")
+    if redirect:
+        return redirect
+
     return templates.TemplateResponse(
         request=request,
         name="assigned.html",
@@ -366,6 +410,13 @@ def answer_page(
     user = _current_user_from_session(request, db, settings)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
+
+    redirect = _redirect_if_account_completion_required(
+        user,
+        current_path=f"/answer/{questionnaire_version_id}",
+    )
+    if redirect:
+        return redirect
 
     if not _has_user_assignment_for_published_version(
         db,
@@ -409,6 +460,13 @@ def answer_consent_page(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
+    redirect = _redirect_if_account_completion_required(
+        user,
+        current_path=f"/answer/{questionnaire_version_id}/consent",
+    )
+    if redirect:
+        return redirect
+
     if not _has_user_assignment_for_published_version(
         db,
         user=user,
@@ -436,12 +494,35 @@ def users_page(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    if user.role != Role.SUPERADMIN:
+    redirect = _redirect_if_account_completion_required(user, current_path="/users")
+    if redirect:
+        return redirect
+
+    if user.role not in {Role.ADMIN, Role.SUPERADMIN}:
         return RedirectResponse(url=_landing_url_for(user), status_code=303)
 
     return templates.TemplateResponse(
         request=request,
         name="users.html",
+        context={
+            **_nav_context(user),
+        },
+    )
+
+
+@router.get("/account")
+def account_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    user = _current_user_from_session(request, db, settings)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="account.html",
         context={
             **_nav_context(user),
         },
@@ -457,14 +538,9 @@ def settings_page(
     user = _current_user_from_session(request, db, settings)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
-
-    return templates.TemplateResponse(
-        request=request,
-        name="settings.html",
-        context={
-            **_nav_context(user),
-        },
-    )
+    if user.role in {Role.ADMIN, Role.SUPERADMIN}:
+        return RedirectResponse(url="/users", status_code=303)
+    return RedirectResponse(url="/account", status_code=303)
 
 
 @router.get("/admin")
@@ -474,7 +550,7 @@ def admin_page() -> RedirectResponse:
 
 @router.get("/passkeys")
 def passkeys_page() -> RedirectResponse:
-    return RedirectResponse(url="/settings", status_code=303)
+    return RedirectResponse(url="/account", status_code=303)
 
 
 @router.get("/me")
