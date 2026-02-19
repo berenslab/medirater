@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     cors_allow_origins: str | None = None
 
     webauthn_rp_id: str = "localhost"
-    webauthn_rp_name: str = "Medirator"
+    webauthn_rp_name: str = "Medirater"
     webauthn_origin: str = "http://localhost:8000"
 
     # Prototype mode: credential payloads are accepted without full WebAuthn cryptographic verification.

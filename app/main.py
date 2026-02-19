@@ -33,7 +33,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Medirator API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Medirater API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,5 +1,5 @@
 [project]
-name = "medirator"
+name = "medirater"
 version = "0.1.0"
 description = "FastAPI-based medical questionnaire platform for users"
 requires-python = ">=3.12"

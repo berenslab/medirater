@@ -418,7 +418,7 @@ wheels = [
 ]
 
 [[package]]
-name = "medirator"
+name = "medirater"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
