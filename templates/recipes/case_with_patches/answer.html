@@ -311,6 +311,12 @@
     const QUESTIONNAIRE_VERSION_ID = {{ questionnaire_version_id | tojson }};
     const ANSWER_LAYOUT_MODE = {{ answer_layout_mode | default("auto") | tojson }};
     const DRAFT_STORAGE_KEY = `medirator.answer.draft.${QUESTIONNAIRE_VERSION_ID}`;
+    const MAGNIFIER_STORAGE_KEY = `medirator.answer.magnifier.${QUESTIONNAIRE_VERSION_ID}`;
+    const MAGNIFIER_DEFAULT_SETTINGS = Object.freeze({
+      enabled: false,
+      size: 110,
+      zoom: 2.0,
+    });
 
     const state = {
       detail: null,
@@ -730,6 +736,70 @@
       localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
     }
 
+    function clampNumber(value, min, max, fallback) {
+      if (!Number.isFinite(value)) {
+        return fallback;
+      }
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function loadMagnifierSettingsFromStorage() {
+      try {
+        const raw = localStorage.getItem(MAGNIFIER_STORAGE_KEY);
+        if (!raw) {
+          return { ...MAGNIFIER_DEFAULT_SETTINGS };
+        }
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          return { ...MAGNIFIER_DEFAULT_SETTINGS };
+        }
+        return {
+          enabled: Boolean(parsed.enabled),
+          size: clampNumber(
+            Number.parseInt(String(parsed.size ?? ""), 10),
+            60,
+            260,
+            MAGNIFIER_DEFAULT_SETTINGS.size,
+          ),
+          zoom: clampNumber(
+            Number.parseFloat(String(parsed.zoom ?? "")),
+            1.2,
+            8,
+            MAGNIFIER_DEFAULT_SETTINGS.zoom,
+          ),
+        };
+      } catch (_error) {
+        return { ...MAGNIFIER_DEFAULT_SETTINGS };
+      }
+    }
+
+    function persistMagnifierSettingsToStorage(settings) {
+      try {
+        localStorage.setItem(
+          MAGNIFIER_STORAGE_KEY,
+          JSON.stringify({
+            enabled: Boolean(settings?.enabled),
+            size: clampNumber(
+              Number.parseInt(String(settings?.size ?? ""), 10),
+              60,
+              260,
+              MAGNIFIER_DEFAULT_SETTINGS.size,
+            ),
+            zoom: Number(
+              clampNumber(
+                Number.parseFloat(String(settings?.zoom ?? "")),
+                1.2,
+                8,
+                MAGNIFIER_DEFAULT_SETTINGS.zoom,
+              ).toFixed(1),
+            ),
+          }),
+        );
+      } catch (_error) {
+        // Ignore storage write failures (e.g. private mode).
+      }
+    }
+
     function readCurrentAnswerValue(question) {
       if (question.question_type === "single_choice") {
         const checked = document.querySelector(`input[name='q-${question.id}']:checked`);
@@ -892,10 +962,10 @@
       const zoomValue = wrapper.querySelector("[data-magnifier-zoom-value]");
       const strip = wrapper.querySelector("[data-magnifier-strip]");
       const settingLabels = Array.from(wrapper.querySelectorAll("[data-magnifier-setting]"));
-      strip.style.display = "none";
-      for (const label of settingLabels) {
-        label.style.display = "none";
-      }
+      const persisted = loadMagnifierSettingsFromStorage();
+      enabledInput.checked = persisted.enabled;
+      sizeSelect.value = String(persisted.size);
+      zoomSelect.value = persisted.zoom.toFixed(1);
 
       const cells = [];
       let lastNormX = 0.5;
@@ -929,8 +999,13 @@
       }
 
       function applyCanvasSize() {
-        const size = Number.parseInt(sizeSelect.value || "90", 10);
-        const safeSize = Number.isFinite(size) && size > 0 ? size : 90;
+        const safeSize = clampNumber(
+          Number.parseInt(sizeSelect.value || "", 10),
+          60,
+          260,
+          MAGNIFIER_DEFAULT_SETTINGS.size,
+        );
+        sizeSelect.value = String(safeSize);
         sizeValue.textContent = `${safeSize}px`;
         for (const cell of cells) {
           cell.canvas.width = safeSize;
@@ -948,8 +1023,13 @@
       }
 
       function drawForNormalizedPosition(normX, normY) {
-        const zoom = Number.parseFloat(zoomSelect.value || "2");
-        const safeZoom = Number.isFinite(zoom) && zoom > 0 ? zoom : 2;
+        const safeZoom = clampNumber(
+          Number.parseFloat(zoomSelect.value || ""),
+          1.2,
+          8,
+          MAGNIFIER_DEFAULT_SETTINGS.zoom,
+        );
+        zoomSelect.value = safeZoom.toFixed(1);
         zoomValue.textContent = `${safeZoom.toFixed(1)}x`;
 
         for (const cell of cells) {
@@ -988,6 +1068,22 @@
         }
       }
 
+      function syncMagnifierVisibility() {
+        const enabled = enabledInput.checked;
+        strip.style.display = enabled ? "grid" : "none";
+        for (const label of settingLabels) {
+          label.style.display = enabled ? "inline-flex" : "none";
+        }
+      }
+
+      function persistMagnifierSettings() {
+        persistMagnifierSettingsToStorage({
+          enabled: enabledInput.checked,
+          size: Number.parseInt(sizeSelect.value || "", 10),
+          zoom: Number.parseFloat(zoomSelect.value || ""),
+        });
+      }
+
       function updateFromPointer(event, sourceImage) {
         if (!enabledInput.checked) return;
         const rect = sourceImage.getBoundingClientRect();
@@ -1013,11 +1109,8 @@
       }
 
       enabledInput.addEventListener("change", () => {
-        const enabled = enabledInput.checked;
-        strip.style.display = enabled ? "grid" : "none";
-        for (const label of settingLabels) {
-          label.style.display = enabled ? "inline-flex" : "none";
-        }
+        syncMagnifierVisibility();
+        persistMagnifierSettings();
         if (!enabledInput.checked) {
           clearCanvases();
           hasPointer = false;
@@ -1025,6 +1118,7 @@
       });
       sizeSelect.addEventListener("input", () => {
         applyCanvasSize();
+        persistMagnifierSettings();
         if (enabledInput.checked && hasPointer) {
           drawForNormalizedPosition(lastNormX, lastNormY);
         } else {
@@ -1032,16 +1126,31 @@
         }
       });
       zoomSelect.addEventListener("input", () => {
+        const safeZoom = clampNumber(
+          Number.parseFloat(zoomSelect.value || ""),
+          1.2,
+          8,
+          MAGNIFIER_DEFAULT_SETTINGS.zoom,
+        );
+        zoomSelect.value = safeZoom.toFixed(1);
+        zoomValue.textContent = `${safeZoom.toFixed(1)}x`;
+        persistMagnifierSettings();
         if (enabledInput.checked && hasPointer) {
           drawForNormalizedPosition(lastNormX, lastNormY);
         } else {
-          zoomValue.textContent = `${Number.parseFloat(zoomSelect.value || "2").toFixed(1)}x`;
           clearCanvases();
         }
       });
 
+      syncMagnifierVisibility();
       applyCanvasSize();
-      zoomValue.textContent = `${Number.parseFloat(zoomSelect.value || "2").toFixed(1)}x`;
+      zoomValue.textContent = `${clampNumber(
+        Number.parseFloat(zoomSelect.value || ""),
+        1.2,
+        8,
+        MAGNIFIER_DEFAULT_SETTINGS.zoom,
+      ).toFixed(1)}x`;
+      persistMagnifierSettings();
       clearCanvases();
       return wrapper;
     }
