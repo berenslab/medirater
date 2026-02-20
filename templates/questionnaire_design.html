@@ -434,19 +434,21 @@
             <option value="true">true</option>
           </select>
 
-          <label for="stimulus-hide-seconds">Hide images after seconds (optional)</label>
-          <input
-            id="stimulus-hide-seconds"
-            type="number"
-            min="0"
-            step="1"
-            placeholder="Blank or 0 = keep images visible"
-          />
-          <div class="row">
-            <button id="apply-hide-to-existing-btn" class="secondary" type="button">
-              Apply hide setting to existing questions
-            </button>
-          </div>
+          <section id="stimulus-hide-section">
+            <label for="stimulus-hide-seconds">Hide images after seconds (optional)</label>
+            <input
+              id="stimulus-hide-seconds"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="Blank or 0 = keep images visible"
+            />
+            <div class="row">
+              <button id="apply-hide-to-existing-btn" class="secondary" type="button">
+                Apply hide setting to existing questions
+              </button>
+            </div>
+          </section>
 
           <div class="row">
             <button id="preview-btn">Preview bulk generation</button>
@@ -635,6 +637,13 @@
       return Boolean(recipeMeta && recipeMeta.requires_patch_question_template);
     }
 
+    function recipeSupportsStimulusHide(recipeMeta) {
+      if (!recipeMeta) {
+        return true;
+      }
+      return recipeMeta.recipe_type !== "labeled_points";
+    }
+
     function renderRecipeCatalog() {
       const catalog = document.getElementById("recipe-catalog");
       const empty = document.getElementById("recipe-empty");
@@ -709,6 +718,16 @@
         document.getElementById("patch-choices").value = "";
         document.getElementById("patch-type").value = "single_choice";
         document.getElementById("patch-required").value = "true";
+      }
+    }
+
+    function syncStimulusHideSection() {
+      const section = document.getElementById("stimulus-hide-section");
+      const activeRecipe = activeRecipeMeta();
+      const supportsHide = recipeSupportsStimulusHide(activeRecipe);
+      section.classList.toggle("hidden", !supportsHide);
+      if (!supportsHide) {
+        document.getElementById("stimulus-hide-seconds").value = "";
       }
     }
 
@@ -887,6 +906,7 @@
         : "";
       syncCaseTemplateSection();
       syncPatchTemplatePanel();
+      syncStimulusHideSection();
       setRecipeConfigEmptyState();
       syncDraftControls();
     }
@@ -1213,13 +1233,14 @@
       const isDraft = status === "draft";
       const isPublished = status === "published";
       const hasActiveRecipe = Boolean(state.activeRecipeType);
+      const supportsHide = recipeSupportsStimulusHide(activeRecipeMeta());
       const publishBtn = document.getElementById("publish-btn");
       publishBtn.disabled = !(isDraft || isPublished);
       publishBtn.textContent = isPublished ? "Unpublish" : "Publish draft";
       document.getElementById("save-instructions-btn").disabled = !isDraft;
       document.getElementById("preview-btn").disabled = !isDraft || !hasActiveRecipe;
       document.getElementById("apply-btn").disabled = !isDraft || !hasActiveRecipe;
-      document.getElementById("apply-hide-to-existing-btn").disabled = !isDraft;
+      document.getElementById("apply-hide-to-existing-btn").disabled = !isDraft || !supportsHide;
       document.getElementById("save-edit-btn").disabled = !isDraft || !state.selectedQuestionId;
       document.getElementById("save-edit-bulk-btn").disabled = !isDraft || !state.selectedQuestionId;
       if (!isDraft) {
@@ -1859,6 +1880,10 @@
     }
 
     function parseStimulusHideSeconds() {
+      const hideSection = document.getElementById("stimulus-hide-section");
+      if (hideSection.classList.contains("hidden")) {
+        return null;
+      }
       const hideSecondsInput = document.getElementById("stimulus-hide-seconds").value.trim();
       if (!hideSecondsInput) {
         return null;

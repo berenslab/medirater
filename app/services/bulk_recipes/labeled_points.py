@@ -40,5 +40,5 @@ RECIPE = RegisteredBulkRecipe(
     grouper=group_assets,
     forced_case_question_type="annotation",
     allows_case_question_templates=False,
-    catalog_order=30,
+    catalog_order=90,
 )

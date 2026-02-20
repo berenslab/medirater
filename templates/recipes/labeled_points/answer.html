@@ -692,7 +692,7 @@
         choice.innerHTML = `
           <input type="radio" name="label-${question.id}" id="${escapeHtml(id)}" value="${escapeHtml(option.value)}" ${index === 0 ? "checked" : ""} />
           <span class="label-swatch" style="background:${colorByLabelValue[option.value] || "#b42318"};"></span>
-          <span>${escapeHtml(option.label)}${option.label === option.value ? "" : ` (${escapeHtml(option.value)})`}</span>
+          <span>${escapeHtml(option.label)}</span>
         `;
         const input = choice.querySelector("input");
         input.addEventListener("change", () => {
@@ -841,7 +841,6 @@
               <div class="point-row-left">
                 <span class="label-swatch" style="background:${color};"></span>
                 <span class="point-label">${escapeHtml(displayLabel)}</span>
-                ${displayLabel === point.label ? "" : `<span class="muted">(${escapeHtml(point.label)})</span>`}
                 <span class="point-coord">(${point.x}, ${point.y})</span>
               </div>
               <div class="point-row-actions">
