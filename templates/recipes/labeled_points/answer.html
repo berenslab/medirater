@@ -269,12 +269,25 @@
     .point-row-main {
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 26px;
+    }
+    .point-row-left {
+      display: inline-flex;
+      align-items: center;
       gap: 6px;
-      margin-bottom: 6px;
+      min-width: 0;
+    }
+    .point-coord {
+      white-space: nowrap;
+      color: #334155;
     }
     .point-row-actions {
-      display: flex;
-      gap: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 8px;
     }
     .point-label {
       display: inline-block;
@@ -294,6 +307,22 @@
     .muted-small {
       color: var(--muted);
       font-size: 0.82rem;
+    }
+    .point-time {
+      color: var(--muted);
+      font-size: 0.76rem;
+      white-space: nowrap;
+    }
+    .action-link {
+      color: var(--accent);
+      font-size: 0.8rem;
+      cursor: pointer;
+      text-decoration: underline;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .action-link.danger {
+      color: #b42318;
     }
     .instructions-inline {
       margin-top: 8px;
@@ -550,7 +579,9 @@
         const x = Number(point.x);
         const y = Number(point.y);
         if (!label || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-        normalized.push({ label, x, y });
+        const rawTime = Number(point.t);
+        const t = Number.isFinite(rawTime) ? Math.round(rawTime) : null;
+        normalized.push({ label, x, y, t });
       }
       return { points: normalized };
     }
@@ -693,12 +724,27 @@
               label: item.label,
               x: Number.isInteger(item.x) ? item.x : Number(item.x.toFixed(2)),
               y: Number.isInteger(item.y) ? item.y : Number(item.y.toFixed(2)),
+              ...(Number.isFinite(Number(item.t)) ? { t: Math.round(Number(item.t)) } : {}),
             })),
           });
         } else {
           state.answersByQuestionId.delete(question.id);
         }
         persistDraftToStorage();
+      }
+
+      function formatPointTime(raw) {
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value <= 0) {
+          return "";
+        }
+        const date = new Date(value);
+        return date.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        });
       }
 
       function findPointIndexNear(displayX, displayY) {
@@ -779,9 +825,12 @@
           return;
         }
         pointList.innerHTML = "";
-        points.forEach((point, index) => {
+        for (let reverseIndex = points.length - 1; reverseIndex >= 0; reverseIndex -= 1) {
+          const point = points[reverseIndex];
+          const index = reverseIndex;
           const displayLabel = labelDisplayByValue[point.label] || point.label;
           const color = colorByLabelValue[point.label] || "#b42318";
+          const timeText = formatPointTime(point.t);
           const row = document.createElement("div");
           row.className = "point-row";
           if (index === activePointIndex) {
@@ -789,33 +838,29 @@
           }
           row.innerHTML = `
             <div class="point-row-main">
-              <span class="label-swatch" style="background:${color};"></span>
-              <span class="point-label">${escapeHtml(displayLabel)}</span>
-              ${displayLabel === point.label ? "" : `<span class="muted">(${escapeHtml(point.label)})</span>`}
-              <span>x=${point.x}, y=${point.y}</span>
-            </div>
-            <div class="point-row-actions">
-              <button type="button" class="ghost small-btn" data-show-index="${index}">Show</button>
-              <button type="button" class="ghost small-btn" data-delete-index="${index}">Delete</button>
+              <div class="point-row-left">
+                <span class="label-swatch" style="background:${color};"></span>
+                <span class="point-label">${escapeHtml(displayLabel)}</span>
+                ${displayLabel === point.label ? "" : `<span class="muted">(${escapeHtml(point.label)})</span>`}
+                <span class="point-coord">(${point.x}, ${point.y})</span>
+              </div>
+              <div class="point-row-actions">
+                ${timeText ? `<span class="point-time">${escapeHtml(timeText)}</span>` : ""}
+                <span class="action-link" role="button" tabindex="0" data-show-index="${index}" data-action-show>show</span>
+                <span class="action-link danger" role="button" tabindex="0" data-delete-index="${index}" data-action-delete>delete</span>
+              </div>
             </div>
           `;
           pointList.appendChild(row);
-          row.querySelector("[data-show-index]").addEventListener("click", () => {
+          const showAction = row.querySelector("[data-action-show]");
+          const deleteAction = row.querySelector("[data-action-delete]");
+
+          function activateShow() {
             activePointIndex = index;
             redraw();
             renderPointsList();
-          });
-          row.addEventListener("click", () => {
-            activePointIndex = index;
-            redraw();
-            renderPointsList();
-          });
-        });
-        pointList.querySelectorAll("[data-delete-index]").forEach((button) => {
-          button.addEventListener("click", (event) => {
-            event.stopPropagation();
-            const index = Number.parseInt(button.getAttribute("data-delete-index") || "-1", 10);
-            if (!Number.isFinite(index) || index < 0 || index >= points.length) return;
+          }
+          function activateDelete() {
             points.splice(index, 1);
             if (activePointIndex === index) {
               activePointIndex = -1;
@@ -825,8 +870,34 @@
             redraw();
             renderPointsList();
             syncAnswerState();
+          }
+
+          showAction.addEventListener("click", (event) => {
+            event.stopPropagation();
+            activateShow();
           });
-        });
+          showAction.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              activateShow();
+            }
+          });
+          deleteAction.addEventListener("click", (event) => {
+            event.stopPropagation();
+            activateDelete();
+          });
+          deleteAction.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              activateDelete();
+            }
+          });
+          row.addEventListener("click", () => {
+            activePointIndex = index;
+            redraw();
+            renderPointsList();
+          });
+        }
       }
 
       function redraw() {
@@ -892,7 +963,7 @@
           setStatus("Select a label first.", false);
           return;
         }
-        points.push({ label, x, y });
+        points.push({ label, x, y, t: Date.now() });
         activePointIndex = points.length - 1;
         redraw();
         renderPointsList();
