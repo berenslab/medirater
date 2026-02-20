@@ -396,6 +396,96 @@ def test_indexed_suffix_sets_custom_stimulus_labels_are_saved(test_session_facto
         )
 
 
+def test_labeled_points_recipe_preview_and_apply(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+        admin_token = client.post(
+            "/api/admin/signup-tokens",
+            json={"role": "admin", "expires_in_minutes": 60},
+        ).json()["token"]
+
+    with TestClient(app) as client:
+        _signup(client, "designer_points", token=admin_token)
+        created = client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Labeled points bulk",
+                "description": "bulk test",
+                "instructions_markdown": "instr",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        asset_ids = _upload_assets(
+            client,
+            questionnaire_id,
+            [
+                "annotate/OCT/001.png",
+                "annotate/OCT/002.png",
+            ],
+        )
+
+        payload = {
+            "recipe_type": "labeled_points",
+            "asset_ids": asset_ids,
+            "recipe_config": {},
+            "question_templates": [
+                {
+                    "prompt_template": "Case {case_index}/{case_total}: annotate lesions.",
+                    "question_type": "single_choice",
+                    "is_required": True,
+                    "choices": [
+                        {"label": "Microaneurysms (MA)", "value": "MA"},
+                        {"label": "Hemorrhages (HE)", "value": "HE"},
+                    ],
+                }
+            ],
+        }
+
+        preview = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/bulk-recipes/preview",
+            json=payload,
+        )
+        assert preview.status_code == 200
+        preview_json = preview.json()
+        assert len(preview_json["cases"]) == 2
+        assert all(len(case["stimulus_asset_ids"]) == 1 for case in preview_json["cases"])
+        assert all(len(case["questions"]) == 1 for case in preview_json["cases"])
+        assert all(case["questions"][0]["question_type"] == "annotation" for case in preview_json["cases"])
+        assert all(
+            case["questions"][0]["choices"] == [
+                {"label": "Microaneurysms (MA)", "value": "MA"},
+                {"label": "Hemorrhages (HE)", "value": "HE"},
+            ]
+            for case in preview_json["cases"]
+        )
+
+        applied = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/bulk-recipes/apply",
+            json={**payload, "replace_existing_questions": True},
+        )
+        assert applied.status_code == 200
+        assert applied.json()["created_questions"] == 2
+
+        detail = client.get(f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}")
+        assert detail.status_code == 200
+        questions = detail.json()["questions"]
+        assert len(questions) == 2
+        assert all(question["question_type"] == "annotation" for question in questions)
+        assert all(
+            [(choice["label"], choice["value"]) for choice in question["choices"]] == [
+                ("Microaneurysms (MA)", "MA"),
+                ("Hemorrhages (HE)", "HE"),
+            ]
+            for question in questions
+        )
+
+
 def test_case_with_patches_recipe_preview_and_apply(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 

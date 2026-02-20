@@ -239,16 +239,20 @@ def _ensure_draft(version: QuestionnaireVersion) -> None:
 
 
 def _validate_question_payload(payload: QuestionCreate | QuestionUpdate) -> None:
-    if payload.question_type in {QuestionType.SINGLE_CHOICE, QuestionType.MULTI_CHOICE}:
+    if payload.question_type in {
+        QuestionType.SINGLE_CHOICE,
+        QuestionType.MULTI_CHOICE,
+        QuestionType.ANNOTATION,
+    }:
         if not payload.choices:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Choice-based questions must include at least one choice",
+                detail="Choice-backed questions must include at least one choice",
             )
     elif payload.choices:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Text questions cannot include choices",
+            detail="Non-choice questions cannot include choices",
         )
 
     positions = [choice.position for choice in payload.choices]
@@ -260,16 +264,20 @@ def _validate_question_payload(payload: QuestionCreate | QuestionUpdate) -> None
 
 
 def _validate_question_template(payload: BulkRecipeQuestionTemplate) -> None:
-    if payload.question_type in {QuestionType.SINGLE_CHOICE, QuestionType.MULTI_CHOICE}:
+    if payload.question_type in {
+        QuestionType.SINGLE_CHOICE,
+        QuestionType.MULTI_CHOICE,
+        QuestionType.ANNOTATION,
+    }:
         if not payload.choices:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Choice-based template questions must include at least one choice",
+                detail="Choice-backed template questions must include at least one choice",
             )
     elif payload.choices:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Text template questions cannot include choices",
+            detail="Non-choice template questions cannot include choices",
         )
 
 
@@ -280,16 +288,20 @@ def _validate_generated_question(payload: BulkGeneratedQuestionPreview) -> None:
             detail="Generated questions must include prompt_text",
         )
 
-    if payload.question_type in {QuestionType.SINGLE_CHOICE, QuestionType.MULTI_CHOICE}:
+    if payload.question_type in {
+        QuestionType.SINGLE_CHOICE,
+        QuestionType.MULTI_CHOICE,
+        QuestionType.ANNOTATION,
+    }:
         if not payload.choices:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Choice-based generated questions must include at least one choice",
+                detail="Choice-backed generated questions must include at least one choice",
             )
     elif payload.choices:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Text generated questions cannot include choices",
+            detail="Non-choice generated questions cannot include choices",
         )
 
     values = [choice.value for choice in payload.choices]
@@ -339,6 +351,26 @@ def _get_accessible_assets(
     return assets
 
 
+def _resolve_forced_case_question_type(recipe_type: str) -> QuestionType | None:
+    recipe = get_registered_bulk_recipe(recipe_type)
+    if recipe is None:
+        return None
+
+    raw_type = (recipe.forced_case_question_type or "").strip().lower()
+    if not raw_type:
+        return None
+    try:
+        return QuestionType(raw_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                f"Recipe '{recipe_type}' has invalid forced_case_question_type "
+                f"'{recipe.forced_case_question_type}'"
+            ),
+        ) from exc
+
+
 def _build_bulk_preview(
     *,
     grouped_cases: list[GroupedCase],
@@ -349,6 +381,8 @@ def _build_bulk_preview(
 ) -> list[BulkRecipeCasePreview]:
     preview_cases: list[BulkRecipeCasePreview] = []
     total_cases = len(grouped_cases)
+    recipe_config_snapshot = dict(recipe_config or {})
+    forced_case_question_type = _resolve_forced_case_question_type(recipe_type)
     for case_index, grouped_case in enumerate(grouped_cases, start=1):
         stimulus_labels = [
             str(item).strip()
@@ -371,17 +405,19 @@ def _build_bulk_preview(
         for template in question_templates:
             _validate_question_template(template)
             prompt_text = _render_prompt(template.prompt_template, context)
+            effective_question_type = forced_case_question_type or template.question_type
             config = {
                 "case_key": grouped_case.case_key,
                 "recipe_type": recipe_type,
                 "stimulus_asset_ids": grouped_case.stimulus_asset_ids,
                 **({"stimulus_labels": stimulus_labels} if stimulus_labels else {}),
+                **({"recipe_config": recipe_config_snapshot} if recipe_config_snapshot else {}),
                 **template.config,
             }
             generated_questions.append(
                 BulkGeneratedQuestionPreview(
                     prompt_text=prompt_text,
-                    question_type=template.question_type,
+                    question_type=effective_question_type,
                     is_required=template.is_required,
                     choices=list(template.choices),
                     config=config,
@@ -407,6 +443,7 @@ def _build_bulk_preview(
                     **({"stimulus_labels": stimulus_labels} if stimulus_labels else {}),
                     "patch_asset_id": patch_asset_id,
                     "patch_index": patch_index,
+                    **({"recipe_config": recipe_config_snapshot} if recipe_config_snapshot else {}),
                     **patch_question_template.config,
                 }
                 generated_questions.append(

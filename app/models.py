@@ -45,6 +45,7 @@ class QuestionType(str, Enum):
     MULTI_CHOICE = "multi_choice"
     SHORT_TEXT = "short_text"
     LONG_TEXT = "long_text"
+    ANNOTATION = "annotation"
 
 
 class User(Base):

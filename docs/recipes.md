@@ -6,6 +6,7 @@ Bulk authoring is recipe-driven and dynamically discovered from `app/services/bu
 
 - `indexed_suffix_sets`: numbered files with optional suffix (`1.png`, `1a.png`, `1b.png`, ...)
 - `single_per_file`: one file per case
+- `labeled_points`: one image per case with point annotations grouped by label value (defined in question template choices)
 - `paired_by_filename`: two folders paired by identical filenames
 - `case_with_patches`: case folder with main images and patch images
 

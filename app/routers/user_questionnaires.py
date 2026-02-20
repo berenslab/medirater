@@ -1,4 +1,5 @@
 import json
+import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -156,6 +157,106 @@ def _normalize_answer_value(question: Question, raw_value: Any) -> Any:
             seen.add(value)
             values.append(value)
         return values
+
+    if question.question_type == QuestionType.ANNOTATION:
+        if not isinstance(raw_value, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Question {question.id} expects an annotation object",
+            )
+
+        raw_points = raw_value.get("points")
+        if not isinstance(raw_points, list):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Question {question.id} expects annotation.points as a list",
+            )
+
+        label_to_value: dict[str, str] = {}
+        for choice in question.choices:
+            label = str(choice.label or "").strip()
+            value = str(choice.value or "").strip()
+            if label and value:
+                label_to_value[label] = value
+
+        allowed_annotation_labels = {item for item in allowed_values if item}
+        if not allowed_annotation_labels:
+            # Backward-compatible fallback for legacy annotation configs.
+            config = _parse_json_object(question.config_json)
+            raw_annotation_labels = config.get("annotation_labels")
+            if not isinstance(raw_annotation_labels, list):
+                recipe_config = config.get("recipe_config")
+                if isinstance(recipe_config, dict):
+                    raw_annotation_labels = recipe_config.get("annotation_labels")
+            allowed_annotation_labels = {
+                str(item).strip()
+                for item in (raw_annotation_labels or [])
+                if isinstance(item, str) and str(item).strip()
+            }
+
+        normalized_points: list[dict[str, Any]] = []
+        for point_index, point in enumerate(raw_points, start=1):
+            if not isinstance(point, dict):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Question {question.id} point #{point_index} must be an object",
+                )
+
+            label_raw = point.get("label")
+            if not isinstance(label_raw, str):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Question {question.id} point #{point_index} label must be a string",
+                )
+            label = label_raw.strip()
+            if not label:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Question {question.id} point #{point_index} label is empty",
+                )
+            # Accept submitted display labels and normalize to choice value.
+            label = label_to_value.get(label, label)
+            if allowed_annotation_labels and label not in allowed_annotation_labels:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Question {question.id} point #{point_index} label '{label}' is not allowed",
+                )
+
+            x_raw = point.get("x")
+            y_raw = point.get("y")
+            if isinstance(x_raw, bool) or not isinstance(x_raw, (int, float)):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Question {question.id} point #{point_index} x must be a number",
+                )
+            if isinstance(y_raw, bool) or not isinstance(y_raw, (int, float)):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Question {question.id} point #{point_index} y must be a number",
+                )
+
+            x = float(x_raw)
+            y = float(y_raw)
+            if not math.isfinite(x):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Question {question.id} point #{point_index} x must be finite",
+                )
+            if not math.isfinite(y):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Question {question.id} point #{point_index} y must be finite",
+                )
+
+            normalized_points.append(
+                {
+                    "label": label,
+                    "x": int(x) if x.is_integer() else x,
+                    "y": int(y) if y.is_integer() else y,
+                }
+            )
+
+        return {"points": normalized_points}
 
     if not isinstance(raw_value, str):
         raise HTTPException(
@@ -457,6 +558,13 @@ def submit_assigned_questionnaire_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Required multi-choice answer is empty for question id {question.id}",
             )
+        if question.question_type == QuestionType.ANNOTATION:
+            points = answer_value.get("points", []) if isinstance(answer_value, dict) else []
+            if len(points) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Required annotation is empty for question id {question.id}",
+                )
 
     response_record = db.scalar(
         select(Response)

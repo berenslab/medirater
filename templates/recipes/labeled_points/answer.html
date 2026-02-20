@@ -1,0 +1,1132 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="google" content="notranslate" />
+  <meta http-equiv="Content-Language" content="en" />
+  <title>medirater</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --panel: #ffffff;
+      --text: #1a2330;
+      --muted: #56657a;
+      --accent: #0a6c7e;
+      --border: #d7e1ea;
+      --ok: #1f7a45;
+      --err: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20px;
+    }
+    .container {
+      max-width: 1220px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.2rem; }
+    .meta { color: var(--muted); font-size: 0.92rem; margin-top: 3px; }
+    nav { display: flex; gap: 10px; }
+    nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+    .content { padding: 14px; }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fcfdff;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    h2 { margin: 0 0 8px; font-size: 1rem; }
+    .muted { color: var(--muted); }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    button, a.button-link, select, input {
+      font: inherit;
+    }
+    button, a.button-link {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+    }
+    button.secondary, a.button-link.secondary {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    button.ghost {
+      background: #e8eef3;
+      color: #1a2b3a;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .status { margin-top: 8px; min-height: 18px; font-size: 0.9rem; }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    .annotation-panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    .annotation-workspace {
+      display: grid;
+      grid-template-columns: minmax(420px, 1fr) 340px;
+      gap: 12px;
+      align-items: start;
+    }
+    .workspace-main {
+      min-width: 0;
+    }
+    .canvas-wrap {
+      position: relative;
+      overflow: auto;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px;
+      max-width: 100%;
+    }
+    .annotation-canvas {
+      display: block;
+      background: #f9fcff;
+      cursor: crosshair;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      max-width: none;
+      touch-action: none;
+    }
+    .magnifier-canvas {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 8px 20px rgba(15, 32, 56, 0.18);
+      pointer-events: none;
+    }
+    .magnifier-canvas.floating {
+      position: fixed;
+      right: auto;
+      bottom: auto;
+      z-index: 20;
+    }
+    .workspace-side {
+      display: grid;
+      gap: 10px;
+    }
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 9px;
+    }
+    .panel h3 {
+      margin: 0 0 8px;
+      font-size: 0.92rem;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .question-block {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    .required { color: #b42318; }
+    .option-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      font-size: 0.84rem;
+    }
+    .option-grid label {
+      display: block;
+      font-size: 0.84rem;
+      color: var(--text);
+    }
+    .option-grid select {
+      width: 100%;
+      margin-top: 4px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      padding: 5px 7px;
+    }
+    .inline-check {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .label-list {
+      display: grid;
+      gap: 6px;
+    }
+    .label-choice {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 4px 6px;
+      cursor: pointer;
+      font-size: 0.86rem;
+    }
+    .label-choice.active {
+      border-color: #aac3da;
+      background: #eef5fb;
+    }
+    .label-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      flex: 0 0 auto;
+    }
+    .point-list {
+      max-height: 232px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fff;
+      font-size: 0.84rem;
+    }
+    .point-row {
+      border: 1px solid #e3ecf4;
+      border-radius: 7px;
+      padding: 6px;
+      margin-bottom: 6px;
+      background: #f9fcff;
+    }
+    .point-row:last-child { margin-bottom: 0; }
+    .point-row.active {
+      border-color: #6ca6d8;
+      background: #eaf4fd;
+    }
+    .point-row-main {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .point-row-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .point-label {
+      display: inline-block;
+      min-width: 44px;
+      border-radius: 999px;
+      background: #edf4f9;
+      border: 1px solid #c7d6e3;
+      padding: 1px 7px;
+      font-size: 0.76rem;
+      text-align: center;
+    }
+    .small-btn {
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+    }
+    .muted-small {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .instructions-inline {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    @media (max-width: 1100px) {
+      .annotation-workspace {
+        grid-template-columns: 1fr;
+      }
+      .workspace-side {
+        grid-template-columns: 1fr;
+      }
+      .magnifier-canvas.floating {
+        position: absolute;
+        right: 14px;
+        bottom: 14px;
+        left: auto !important;
+        top: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div style="max-width:1220px;margin:0 auto 10px;"><a href="/" style="font-size:1.15rem;color:var(--accent);text-decoration:none;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">medirater</a></div>
+  <main class="container">
+    <section class="header">
+      <div>
+        <h1>Answer Questionnaire</h1>
+        <div id="headline" class="meta">Loading questionnaire...</div>
+      </div>
+      <nav>
+        {% if show_questionnaires_link %}<a href="/questionnaires">Questionnaires</a>{% endif %}
+        {% if show_users_link %}<a href="/users">Users</a>{% endif %}
+        {% if show_assigned_link %}<a href="/assigned">Assigned</a>{% endif %}
+        {% if show_account_link %}<a href="/account">Account</a>{% endif %}
+      </nav>
+    </section>
+
+    <section class="content">
+      <div style="margin-bottom: 10px;">
+        <a class="button-link secondary" href="/assigned">Back to assigned</a>
+      </div>
+
+      <article class="card">
+        <h2 id="progress-title">Loading...</h2>
+        <div id="question-root"></div>
+      </article>
+
+      <div class="row">
+        <button id="prev-btn" class="secondary" type="button">Previous</button>
+        <button id="next-btn" type="button">Next case</button>
+      </div>
+      <div class="instructions-inline" id="instructions"></div>
+      <div id="status" class="status"></div>
+    </section>
+  </main>
+
+  <script>
+    const QUESTIONNAIRE_VERSION_ID = {{ questionnaire_version_id | tojson }};
+    const DRAFT_STORAGE_KEY = `medirater.answer.draft.${QUESTIONNAIRE_VERSION_ID}`;
+    const MAGNIFIER_STORAGE_KEY = `medirater.answer.magnifier.${QUESTIONNAIRE_VERSION_ID}`;
+    const DEFAULT_MAGNIFIER = Object.freeze({
+      enabled: true,
+      fixed: true,
+      show_center_marker: false,
+      size: 100,
+      zoom: 2.0,
+    });
+    const POINT_COLORS = [
+      "#d92d20",
+      "#0b84f3",
+      "#02983b",
+      "#e67e22",
+      "#7a3e9d",
+      "#147a6a",
+      "#b42318",
+      "#0a6c7e",
+      "#5f5c56",
+    ];
+
+    const state = {
+      detail: null,
+      caseGroups: [],
+      currentCaseIndex: 0,
+      answersByQuestionId: new Map(),
+      editorByQuestionId: new Map(),
+    };
+
+    function setStatus(message, ok) {
+      const el = document.getElementById("status");
+      el.className = ok ? "status ok" : "status err";
+      el.textContent = message || "";
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = {};
+      }
+      if (!response.ok) {
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      return data;
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function loadDraftFromStorage() {
+      try {
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (!raw) return new Map();
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return new Map();
+        return new Map(Object.entries(parsed));
+      } catch (_error) {
+        return new Map();
+      }
+    }
+
+    function persistDraftToStorage() {
+      const payload = Object.fromEntries(state.answersByQuestionId.entries());
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    function loadMagnifierFromStorage() {
+      try {
+        const raw = localStorage.getItem(MAGNIFIER_STORAGE_KEY);
+        if (!raw) {
+          return { ...DEFAULT_MAGNIFIER };
+        }
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          return { ...DEFAULT_MAGNIFIER };
+        }
+        const size = Number.parseInt(String(parsed.size ?? ""), 10);
+        const zoom = Number.parseFloat(String(parsed.zoom ?? ""));
+        return {
+          enabled: Boolean(parsed.enabled),
+          fixed: parsed.fixed === undefined ? DEFAULT_MAGNIFIER.fixed : Boolean(parsed.fixed),
+          show_center_marker: parsed.show_center_marker === undefined
+            ? DEFAULT_MAGNIFIER.show_center_marker
+            : Boolean(parsed.show_center_marker),
+          size: Number.isFinite(size) ? Math.max(50, Math.min(280, size)) : DEFAULT_MAGNIFIER.size,
+          zoom: Number.isFinite(zoom) ? Math.max(1.2, Math.min(6, zoom)) : DEFAULT_MAGNIFIER.zoom,
+        };
+      } catch (_error) {
+        return { ...DEFAULT_MAGNIFIER };
+      }
+    }
+
+    function persistMagnifierToStorage(settings) {
+      try {
+        localStorage.setItem(MAGNIFIER_STORAGE_KEY, JSON.stringify(settings));
+      } catch (_error) {
+        // Ignore storage errors.
+      }
+    }
+
+    function getCaseKey(question) {
+      const key = String(question?.config?.case_key || "").trim();
+      return key || `question-${question.id}`;
+    }
+
+    function groupQuestionsIntoCases(questions) {
+      const byKey = new Map();
+      const ordered = [...(questions || [])].sort((a, b) => a.position - b.position);
+      for (const question of ordered) {
+        const caseKey = getCaseKey(question);
+        if (!byKey.has(caseKey)) {
+          byKey.set(caseKey, {
+            case_key: caseKey,
+            first_position: question.position,
+            questions: [],
+            asset_ids: [],
+          });
+        }
+        const group = byKey.get(caseKey);
+        group.questions.push(question);
+
+        const stimulusIds = Array.isArray(question?.config?.stimulus_asset_ids)
+          ? question.config.stimulus_asset_ids
+          : [];
+        for (const assetId of stimulusIds) {
+          if (typeof assetId !== "string" || !assetId) continue;
+          if (!group.asset_ids.includes(assetId)) {
+            group.asset_ids.push(assetId);
+          }
+        }
+      }
+      return Array.from(byKey.values()).sort((a, b) => a.first_position - b.first_position);
+    }
+
+    function buildLabelColorMap(labelOptions) {
+      const map = {};
+      for (let index = 0; index < labelOptions.length; index += 1) {
+        map[labelOptions[index].value] = POINT_COLORS[index % POINT_COLORS.length];
+      }
+      return map;
+    }
+
+    function getQuestionLabelOptions(question) {
+      const fromChoices = Array.isArray(question?.choices) ? question.choices : [];
+      const options = [];
+      const seenValues = new Set();
+      for (const choice of fromChoices) {
+        const value = String(choice?.value || "").trim();
+        if (!value || seenValues.has(value)) continue;
+        seenValues.add(value);
+        const labelRaw = String(choice?.label || "").trim();
+        options.push({ value, label: labelRaw || value });
+      }
+      if (options.length) {
+        return options;
+      }
+
+      // Backward-compatible fallback for legacy annotation config.
+      const config = question?.config || {};
+      const rawDirect = Array.isArray(config.annotation_labels) ? config.annotation_labels : [];
+      const recipeConfig = config.recipe_config && typeof config.recipe_config === "object"
+        ? config.recipe_config
+        : {};
+      const rawFromRecipe = Array.isArray(recipeConfig.annotation_labels) ? recipeConfig.annotation_labels : [];
+      const labels = [...rawDirect, ...rawFromRecipe]
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+      const unique = [];
+      const seen = new Set();
+      for (const label of labels) {
+        if (seen.has(label)) continue;
+        seen.add(label);
+        unique.push(label);
+      }
+      if (unique.length) {
+        return unique.map((item) => ({ value: item, label: item }));
+      }
+      return [{ value: "Label", label: "Label" }];
+    }
+
+    function normalizeAnnotationValue(rawValue) {
+      if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+        return { points: [] };
+      }
+      const points = Array.isArray(rawValue.points) ? rawValue.points : [];
+      const normalized = [];
+      for (const point of points) {
+        if (!point || typeof point !== "object" || Array.isArray(point)) continue;
+        const label = String(point.label || "").trim();
+        const x = Number(point.x);
+        const y = Number(point.y);
+        if (!label || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+        normalized.push({ label, x, y });
+      }
+      return { points: normalized };
+    }
+
+    function createAnnotationEditor({ question, assetId }) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "annotation-panel";
+      const labelOptions = getQuestionLabelOptions(question);
+      const colorByLabelValue = buildLabelColorMap(labelOptions);
+      const labelDisplayByValue = Object.fromEntries(
+        labelOptions.map((item) => [item.value, item.label]),
+      );
+      const labelTextToValue = {};
+      for (const option of labelOptions) {
+        labelTextToValue[option.label] = option.value;
+      }
+      const existingRaw = state.answersByQuestionId.get(question.id);
+      const existing = normalizeAnnotationValue(existingRaw);
+      const points = existing.points.map((point) => ({
+        ...point,
+        label: labelTextToValue[point.label] || point.label,
+      }));
+      const magnifier = loadMagnifierFromStorage();
+
+      wrapper.innerHTML = `
+        <div class="annotation-workspace">
+          <div class="workspace-main">
+            <div class="canvas-wrap">
+              <canvas class="annotation-canvas" data-canvas></canvas>
+              <canvas class="magnifier-canvas" width="100" height="100" data-mag-canvas></canvas>
+            </div>
+          </div>
+          <aside class="workspace-side">
+            <section class="panel">
+              <h3>Options</h3>
+              <div class="option-grid">
+                <label class="inline-check"><input type="checkbox" data-mag-enabled /> Show magnifier</label>
+                <label class="inline-check"><input type="checkbox" data-mag-fixed /> Fix magnifier position</label>
+                <label class="inline-check"><input type="checkbox" data-mag-marker /> Show center marker</label>
+                <label>
+                  Magnifier size
+                  <select data-mag-size></select>
+                </label>
+                <label>
+                  Zoom level
+                  <select data-mag-zoom></select>
+                </label>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Logged Coordinates</h3>
+                <button type="button" class="ghost small-btn" data-clear-btn>Delete all</button>
+              </div>
+              <div class="point-list" data-point-list></div>
+            </section>
+            <section class="panel">
+              <h3>Labels</h3>
+              <div class="label-list" data-label-list></div>
+              <div class="row" style="margin-top:8px;">
+                <button type="button" class="ghost small-btn" data-undo-btn>Undo last</button>
+              </div>
+            </section>
+          </aside>
+        </div>
+      `;
+
+      const labelList = wrapper.querySelector("[data-label-list]");
+      const canvas = wrapper.querySelector("[data-canvas]");
+      const ctx = canvas.getContext("2d");
+      const pointList = wrapper.querySelector("[data-point-list]");
+      const undoBtn = wrapper.querySelector("[data-undo-btn]");
+      const clearBtn = wrapper.querySelector("[data-clear-btn]");
+      const magEnabled = wrapper.querySelector("[data-mag-enabled]");
+      const magFixed = wrapper.querySelector("[data-mag-fixed]");
+      const magMarker = wrapper.querySelector("[data-mag-marker]");
+      const magSize = wrapper.querySelector("[data-mag-size]");
+      const magZoom = wrapper.querySelector("[data-mag-zoom]");
+      const magCanvas = wrapper.querySelector("[data-mag-canvas]");
+      const magCtx = magCanvas.getContext("2d");
+      const image = new Image();
+      const magnifierSizeOptions = [50, 100, 150, 200, 250];
+      const magnifierZoomOptions = [1.5, 2, 2.5, 3, 4];
+      let displayScale = 1;
+      let selectedLabelValue = String(labelOptions[0]?.value || "").trim();
+      let activePointIndex = -1;
+      let lastPointerClient = null;
+
+      function syncLabelSelectionUi() {
+        labelList.querySelectorAll("[data-label-choice]").forEach((el) => {
+          const currentValue = String(el.getAttribute("data-label-choice") || "");
+          el.classList.toggle("active", currentValue === selectedLabelValue);
+        });
+      }
+
+      labelOptions.forEach((option, index) => {
+        const id = `${question.id}-label-${index + 1}`;
+        const choice = document.createElement("label");
+        choice.className = "label-choice";
+        choice.setAttribute("for", id);
+        choice.setAttribute("data-label-choice", option.value);
+        choice.innerHTML = `
+          <input type="radio" name="label-${question.id}" id="${escapeHtml(id)}" value="${escapeHtml(option.value)}" ${index === 0 ? "checked" : ""} />
+          <span class="label-swatch" style="background:${colorByLabelValue[option.value] || "#b42318"};"></span>
+          <span>${escapeHtml(option.label)}${option.label === option.value ? "" : ` (${escapeHtml(option.value)})`}</span>
+        `;
+        const input = choice.querySelector("input");
+        input.addEventListener("change", () => {
+          selectedLabelValue = option.value;
+          syncLabelSelectionUi();
+          setStatus("", true);
+        });
+        labelList.appendChild(choice);
+      });
+      syncLabelSelectionUi();
+
+      for (const size of magnifierSizeOptions) {
+        const option = document.createElement("option");
+        option.value = String(size);
+        option.textContent = String(size);
+        magSize.appendChild(option);
+      }
+      for (const zoom of magnifierZoomOptions) {
+        const option = document.createElement("option");
+        option.value = String(zoom);
+        option.textContent = `${zoom}x`;
+        magZoom.appendChild(option);
+      }
+
+      function nearestFromAllowed(rawValue, allowed, fallback) {
+        if (!Number.isFinite(rawValue)) return fallback;
+        let best = fallback;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        for (const value of allowed) {
+          const distance = Math.abs(value - rawValue);
+          if (distance < bestDistance) {
+            best = value;
+            bestDistance = distance;
+          }
+        }
+        return best;
+      }
+
+      magEnabled.checked = Boolean(magnifier.enabled);
+      magFixed.checked = Boolean(magnifier.fixed);
+      magMarker.checked = Boolean(magnifier.show_center_marker);
+      magSize.value = String(nearestFromAllowed(magnifier.size, magnifierSizeOptions, DEFAULT_MAGNIFIER.size));
+      magZoom.value = String(nearestFromAllowed(magnifier.zoom, magnifierZoomOptions, DEFAULT_MAGNIFIER.zoom));
+      magCanvas.width = Number.parseInt(magSize.value || "100", 10);
+      magCanvas.height = Number.parseInt(magSize.value || "100", 10);
+
+      function syncAnswerState() {
+        if (points.length) {
+          state.answersByQuestionId.set(question.id, {
+            points: points.map((item) => ({
+              label: item.label,
+              x: Number.isInteger(item.x) ? item.x : Number(item.x.toFixed(2)),
+              y: Number.isInteger(item.y) ? item.y : Number(item.y.toFixed(2)),
+            })),
+          });
+        } else {
+          state.answersByQuestionId.delete(question.id);
+        }
+        persistDraftToStorage();
+      }
+
+      function findPointIndexNear(displayX, displayY) {
+        const radius = 8;
+        for (let index = points.length - 1; index >= 0; index -= 1) {
+          const point = points[index];
+          const px = point.x * displayScale;
+          const py = point.y * displayScale;
+          const dx = displayX - px;
+          const dy = displayY - py;
+          if ((dx * dx) + (dy * dy) <= radius * radius) {
+            return index;
+          }
+        }
+        return -1;
+      }
+
+      function applyMagnifierPlacement(clientX, clientY) {
+        if (magFixed.checked) {
+          magCanvas.classList.remove("floating");
+          magCanvas.style.left = "";
+          magCanvas.style.top = "";
+          return;
+        }
+        magCanvas.classList.add("floating");
+        magCanvas.style.left = `${Math.round(clientX + 14)}px`;
+        magCanvas.style.top = `${Math.round(clientY + 14)}px`;
+      }
+
+      function drawMagnifier(clientX, clientY) {
+        if (!magEnabled.checked || !image.naturalWidth || !image.naturalHeight || !canvas.width || !canvas.height) {
+          magCanvas.style.display = "none";
+          magCtx.clearRect(0, 0, magCanvas.width, magCanvas.height);
+          return;
+        }
+        magCanvas.style.display = "block";
+        if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+          const rectFallback = canvas.getBoundingClientRect();
+          clientX = rectFallback.left + (rectFallback.width / 2);
+          clientY = rectFallback.top + (rectFallback.height / 2);
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const offsetX = clientX - rect.left;
+        const offsetY = clientY - rect.top;
+        const sourceX = offsetX / displayScale;
+        const sourceY = offsetY / displayScale;
+        const zoom = Number.parseFloat(magZoom.value || "2");
+        const sourceW = magCanvas.width / zoom;
+        const sourceH = magCanvas.height / zoom;
+        const clampedX = Math.max(0, Math.min(image.naturalWidth - sourceW, sourceX - sourceW / 2));
+        const clampedY = Math.max(0, Math.min(image.naturalHeight - sourceH, sourceY - sourceH / 2));
+        magCtx.clearRect(0, 0, magCanvas.width, magCanvas.height);
+        magCtx.drawImage(
+          image,
+          clampedX,
+          clampedY,
+          sourceW,
+          sourceH,
+          0,
+          0,
+          magCanvas.width,
+          magCanvas.height,
+        );
+        if (magMarker.checked) {
+          magCtx.beginPath();
+          magCtx.arc(magCanvas.width / 2, magCanvas.height / 2, 8, 0, Math.PI * 2);
+          magCtx.strokeStyle = "#1f2d3d";
+          magCtx.lineWidth = 1;
+          magCtx.stroke();
+        }
+        applyMagnifierPlacement(clientX, clientY);
+      }
+
+      function renderPointsList() {
+        if (!points.length) {
+          pointList.innerHTML = "<div class='muted'>No points yet.</div>";
+          return;
+        }
+        pointList.innerHTML = "";
+        points.forEach((point, index) => {
+          const displayLabel = labelDisplayByValue[point.label] || point.label;
+          const color = colorByLabelValue[point.label] || "#b42318";
+          const row = document.createElement("div");
+          row.className = "point-row";
+          if (index === activePointIndex) {
+            row.classList.add("active");
+          }
+          row.innerHTML = `
+            <div class="point-row-main">
+              <span class="label-swatch" style="background:${color};"></span>
+              <span class="point-label">${escapeHtml(displayLabel)}</span>
+              ${displayLabel === point.label ? "" : `<span class="muted">(${escapeHtml(point.label)})</span>`}
+              <span>x=${point.x}, y=${point.y}</span>
+            </div>
+            <div class="point-row-actions">
+              <button type="button" class="ghost small-btn" data-show-index="${index}">Show</button>
+              <button type="button" class="ghost small-btn" data-delete-index="${index}">Delete</button>
+            </div>
+          `;
+          pointList.appendChild(row);
+          row.querySelector("[data-show-index]").addEventListener("click", () => {
+            activePointIndex = index;
+            redraw();
+            renderPointsList();
+          });
+          row.addEventListener("click", () => {
+            activePointIndex = index;
+            redraw();
+            renderPointsList();
+          });
+        });
+        pointList.querySelectorAll("[data-delete-index]").forEach((button) => {
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const index = Number.parseInt(button.getAttribute("data-delete-index") || "-1", 10);
+            if (!Number.isFinite(index) || index < 0 || index >= points.length) return;
+            points.splice(index, 1);
+            if (activePointIndex === index) {
+              activePointIndex = -1;
+            } else if (activePointIndex > index) {
+              activePointIndex -= 1;
+            }
+            redraw();
+            renderPointsList();
+            syncAnswerState();
+          });
+        });
+      }
+
+      function redraw() {
+        if (!image.naturalWidth || !image.naturalHeight) {
+          return;
+        }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        for (const point of points) {
+          const x = point.x * displayScale;
+          const y = point.y * displayScale;
+          const color = colorByLabelValue[point.label] || "#b42318";
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = "#ffffff";
+          ctx.stroke();
+        }
+        if (activePointIndex >= 0 && activePointIndex < points.length) {
+          const point = points[activePointIndex];
+          ctx.beginPath();
+          ctx.arc(point.x * displayScale, point.y * displayScale, 8, 0, Math.PI * 2);
+          ctx.strokeStyle = "#5c7085";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+
+      image.onload = () => {
+        const maxWidth = 900;
+        const ratio = image.naturalWidth > maxWidth ? maxWidth / image.naturalWidth : 1;
+        displayScale = ratio;
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+        redraw();
+        renderPointsList();
+        if (magEnabled.checked) {
+          drawMagnifier(Number.NaN, Number.NaN);
+        }
+      };
+      image.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${assetId}/content`;
+
+      canvas.addEventListener("click", (event) => {
+        if (!image.naturalWidth || !image.naturalHeight) return;
+        const rect = canvas.getBoundingClientRect();
+        const offsetX = event.clientX - rect.left;
+        const offsetY = event.clientY - rect.top;
+        const hitIndex = findPointIndexNear(offsetX, offsetY);
+        if (hitIndex >= 0) {
+          activePointIndex = hitIndex;
+          redraw();
+          renderPointsList();
+          return;
+        }
+        const x = Math.round(offsetX / displayScale);
+        const y = Math.round(offsetY / displayScale);
+        const label = String(selectedLabelValue || "").trim();
+        if (!label) {
+          setStatus("Select a label first.", false);
+          return;
+        }
+        points.push({ label, x, y });
+        activePointIndex = points.length - 1;
+        redraw();
+        renderPointsList();
+        syncAnswerState();
+        drawMagnifier(event.clientX, event.clientY);
+      });
+
+      canvas.addEventListener("mousemove", (event) => {
+        lastPointerClient = { x: event.clientX, y: event.clientY };
+        drawMagnifier(event.clientX, event.clientY);
+      });
+
+      canvas.addEventListener("mouseleave", () => {
+        if (!magEnabled.checked) return;
+        if (magFixed.checked) {
+          drawMagnifier(Number.NaN, Number.NaN);
+          return;
+        }
+        magCtx.clearRect(0, 0, magCanvas.width, magCanvas.height);
+      });
+
+      undoBtn.addEventListener("click", () => {
+        if (!points.length) return;
+        points.pop();
+        if (activePointIndex >= points.length) {
+          activePointIndex = points.length - 1;
+        }
+        redraw();
+        renderPointsList();
+        syncAnswerState();
+      });
+
+      clearBtn.addEventListener("click", () => {
+        points.length = 0;
+        activePointIndex = -1;
+        redraw();
+        renderPointsList();
+        syncAnswerState();
+      });
+
+      function syncMagnifierSettings() {
+        const size = Math.max(50, Math.min(280, Number.parseInt(magSize.value || "100", 10)));
+        const zoom = Math.max(1.2, Math.min(6, Number.parseFloat(magZoom.value || "2")));
+        magCanvas.width = size;
+        magCanvas.height = size;
+        persistMagnifierToStorage({
+          enabled: magEnabled.checked,
+          fixed: magFixed.checked,
+          show_center_marker: magMarker.checked,
+          size,
+          zoom,
+        });
+        if (magEnabled.checked) {
+          if (lastPointerClient) {
+            drawMagnifier(lastPointerClient.x, lastPointerClient.y);
+          } else {
+            drawMagnifier(Number.NaN, Number.NaN);
+          }
+        } else {
+          magCtx.clearRect(0, 0, magCanvas.width, magCanvas.height);
+        }
+      }
+
+      magEnabled.addEventListener("change", syncMagnifierSettings);
+      magFixed.addEventListener("change", syncMagnifierSettings);
+      magMarker.addEventListener("change", syncMagnifierSettings);
+      magSize.addEventListener("change", syncMagnifierSettings);
+      magZoom.addEventListener("change", syncMagnifierSettings);
+      syncMagnifierSettings();
+      syncAnswerState();
+
+      state.editorByQuestionId.set(question.id, {
+        getValue: () => ({ points: [...points] }),
+      });
+      return wrapper;
+    }
+
+    function renderQuestion(question, caseGroup) {
+      const block = document.createElement("section");
+      block.className = "question-block";
+      block.innerHTML = `<h2>${escapeHtml(question.prompt_text)}${question.is_required ? ' <span class="required">*</span>' : ""}</h2>`;
+
+      if (question.question_type !== "annotation") {
+        const message = document.createElement("p");
+        message.className = "muted";
+        message.textContent = "This recipe expects annotation questions only.";
+        block.appendChild(message);
+        return block;
+      }
+
+      if (!caseGroup.asset_ids.length) {
+        const warning = document.createElement("p");
+        warning.className = "muted";
+        warning.textContent = "No image configured for this case.";
+        block.appendChild(warning);
+        return block;
+      }
+
+      const editor = createAnnotationEditor({
+        question,
+        assetId: caseGroup.asset_ids[0],
+      });
+      block.appendChild(editor);
+      return block;
+    }
+
+    function renderCurrentCase() {
+      const groups = state.caseGroups || [];
+      const total = groups.length;
+      const current = groups[state.currentCaseIndex];
+
+      document.getElementById("headline").textContent = `${state.detail.title} v${state.detail.version_number}`;
+      document.getElementById("instructions").textContent = state.detail.instructions_markdown || "";
+      state.editorByQuestionId.clear();
+
+      if (!current) {
+        document.getElementById("progress-title").textContent = "No questions";
+        document.getElementById("question-root").innerHTML = "<p class='muted'>Nothing to answer.</p>";
+        document.getElementById("prev-btn").disabled = true;
+        document.getElementById("next-btn").disabled = true;
+        return;
+      }
+
+      document.getElementById("progress-title").textContent = `Annotating image ${state.currentCaseIndex + 1} / ${total}`;
+      document.getElementById("prev-btn").disabled = state.currentCaseIndex <= 0;
+      document.getElementById("next-btn").textContent = state.currentCaseIndex >= total - 1 ? "Submit" : "Next case";
+
+      const root = document.getElementById("question-root");
+      root.innerHTML = "";
+      for (const question of current.questions) {
+        root.appendChild(renderQuestion(question, current));
+      }
+    }
+
+    function validateAllRequiredAnswers() {
+      for (let caseIndex = 0; caseIndex < state.caseGroups.length; caseIndex += 1) {
+        const group = state.caseGroups[caseIndex];
+        for (let questionIndex = 0; questionIndex < group.questions.length; questionIndex += 1) {
+          const question = group.questions[questionIndex];
+          if (!question.is_required) continue;
+          const value = state.answersByQuestionId.get(question.id);
+          const message = caseIndex === state.currentCaseIndex
+            ? `Question ${questionIndex + 1} on this page is required.`
+            : `Case ${caseIndex + 1}, question ${questionIndex + 1} is required.`;
+          if (question.question_type === "annotation") {
+            const points = value && typeof value === "object" && Array.isArray(value.points) ? value.points : [];
+            if (!points.length) {
+              throw new Error(message);
+            }
+          } else if (value === undefined || value === null || String(value).trim() === "") {
+            throw new Error(message);
+          }
+        }
+      }
+    }
+
+    function buildSubmitAnswers() {
+      const answers = [];
+      for (const question of state.detail.questions || []) {
+        if (!state.answersByQuestionId.has(question.id)) continue;
+        answers.push({
+          question_id: question.id,
+          value: state.answersByQuestionId.get(question.id),
+        });
+      }
+      return answers;
+    }
+
+    async function submitQuestionnaire() {
+      validateAllRequiredAnswers();
+      const answers = buildSubmitAnswers();
+      const submitted = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/responses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+      setStatus(`Submitted at ${submitted.submitted_at}. Redirecting...`, true);
+      window.setTimeout(() => {
+        window.location.assign("/assigned");
+      }, 650);
+    }
+
+    function getCaseIndexFromUrl(maxCases) {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get("q");
+      if (!raw) return null;
+      const parsed = Number.parseInt(raw, 10);
+      if (!Number.isFinite(parsed)) return null;
+      const zeroBased = parsed - 1;
+      if (zeroBased < 0 || zeroBased >= maxCases) return null;
+      return zeroBased;
+    }
+
+    async function init() {
+      try {
+        const detail = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}`);
+        state.detail = detail;
+        state.caseGroups = groupQuestionsIntoCases(detail.questions || []);
+
+        const existingAnswers = new Map((detail.existing_answers || []).map((item) => [item.question_id, item.value]));
+        const draftAnswers = loadDraftFromStorage();
+        state.answersByQuestionId = new Map(existingAnswers.entries());
+        for (const [questionId, value] of draftAnswers.entries()) {
+          state.answersByQuestionId.set(questionId, value);
+        }
+
+        const caseIndexFromUrl = getCaseIndexFromUrl(state.caseGroups.length);
+        state.currentCaseIndex = caseIndexFromUrl !== null ? caseIndexFromUrl : 0;
+        renderCurrentCase();
+      } catch (error) {
+        setStatus(error.message || String(error), false);
+      }
+    }
+
+    document.getElementById("prev-btn").addEventListener("click", () => {
+      if (state.currentCaseIndex <= 0) return;
+      state.currentCaseIndex -= 1;
+      renderCurrentCase();
+      setStatus("", true);
+    });
+
+    document.getElementById("next-btn").addEventListener("click", async () => {
+      try {
+        const total = (state.caseGroups || []).length;
+        if (state.currentCaseIndex >= total - 1) {
+          await submitQuestionnaire();
+          return;
+        }
+        state.currentCaseIndex += 1;
+        renderCurrentCase();
+        setStatus("", true);
+      } catch (error) {
+        setStatus(error.message || String(error), false);
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

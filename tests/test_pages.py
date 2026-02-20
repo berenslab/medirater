@@ -282,6 +282,61 @@ def test_answer_page_uses_recipe_specific_template_when_available(test_session_f
         assert 'const ANSWER_LAYOUT_MODE = "case_and_question_images";' in answer_page.text
 
 
+def test_answer_page_uses_labeled_points_template(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as client:
+        _signup(client, "root", token=bootstrap_token)
+
+        created = client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Labeled points dispatch",
+                "description": None,
+                "instructions_markdown": "",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        created_question = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+            json={
+                "position": 1,
+                "prompt_text": "Annotate points",
+                "question_type": "annotation",
+                "is_required": False,
+                "config": {
+                    "case_key": "case-0001",
+                    "recipe_type": "labeled_points",
+                    "stimulus_asset_ids": [],
+                },
+                "choices": [
+                    {"position": 1, "label": "Microaneurysms (MA)", "value": "MA"},
+                    {"position": 2, "label": "Hemorrhages (HE)", "value": "HE"},
+                ],
+            },
+        )
+        assert created_question.status_code == 200
+
+        published = client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+        )
+        assert published.status_code == 200
+
+        consented = client.post(
+            f"/api/user/questionnaires/{version_id}/consent",
+            json={"consented": True},
+        )
+        assert consented.status_code == 200
+
+        answer_page = client.get(f"/answer/{version_id}")
+        assert answer_page.status_code == 200
+        assert "annotation-canvas" in answer_page.text
+
+
 def test_answer_page_requires_template_for_unknown_recipe(test_session_factory) -> None:
     bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
 

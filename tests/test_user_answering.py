@@ -243,3 +243,139 @@ def test_user_receives_custom_questionnaire_consent_text(test_session_factory) -
         detail = user_client.get(f"/api/user/questionnaires/{version_id}")
         assert detail.status_code == 200
         assert detail.json()["consent_text"] == custom_consent
+
+
+def test_user_can_submit_labeled_points_annotation(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+
+        created = super_client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Point annotation",
+                "description": "Annotation flow",
+                "instructions_markdown": "Annotate lesions.",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        uploaded = super_client.post(
+            "/api/admin/assets/upload",
+            data={"questionnaire_id": questionnaire_id},
+            files=[("files", ("annotate/OCT/1.png", PNG_BYTES, "image/png"))],
+        )
+        assert uploaded.status_code == 200
+        asset_id = uploaded.json()[0]["id"]
+
+        question = super_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+            json={
+                "position": 1,
+                "prompt_text": "Mark drusen points.",
+                "question_type": "annotation",
+                "is_required": True,
+                "config": {
+                    "case_key": "case-0001",
+                    "recipe_type": "labeled_points",
+                    "stimulus_asset_ids": [asset_id],
+                },
+                "choices": [
+                    {"position": 1, "label": "Drusen (DS)", "value": "DS"},
+                    {"position": 2, "label": "Microaneurysms (MA)", "value": "MA"},
+                ],
+            },
+        )
+        assert question.status_code == 200
+        question_id = question.json()["id"]
+
+        published = super_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+        )
+        assert published.status_code == 200
+
+        user_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={
+                "role": "user",
+                "expires_in_minutes": 60,
+                "questionnaire_version_ids": [version_id],
+            },
+        )
+        assert user_token.status_code == 200
+
+    with TestClient(app) as user_client:
+        _signup(user_client, "annotator", token=user_token.json()["token"])
+        _complete_profile(user_client, "annotator", yoe=3)
+
+        consent_submit = user_client.post(
+            f"/api/user/questionnaires/{version_id}/consent",
+            json={"consented": True},
+        )
+        assert consent_submit.status_code == 200
+
+        required_empty = user_client.post(
+            f"/api/user/questionnaires/{version_id}/responses",
+            json={
+                "answers": [
+                    {
+                        "question_id": question_id,
+                        "value": {"points": []},
+                    }
+                ]
+            },
+        )
+        assert required_empty.status_code == 400
+        assert "Required annotation is empty" in required_empty.json()["detail"]
+
+        invalid_label = user_client.post(
+            f"/api/user/questionnaires/{version_id}/responses",
+            json={
+                "answers": [
+                    {
+                        "question_id": question_id,
+                        "value": {
+                            "points": [
+                                {"label": "NOT_ALLOWED", "x": 120, "y": 88},
+                            ]
+                        },
+                    }
+                ]
+            },
+        )
+        assert invalid_label.status_code == 400
+        assert "is not allowed" in invalid_label.json()["detail"]
+
+        submitted = user_client.post(
+            f"/api/user/questionnaires/{version_id}/responses",
+            json={
+                "answers": [
+                    {
+                        "question_id": question_id,
+                        "value": {
+                            "points": [
+                                {"label": "DS", "x": 120, "y": 88},
+                                {"label": "Microaneurysms (MA)", "x": 200.5, "y": 101.25},
+                            ]
+                        },
+                    }
+                ]
+            },
+        )
+        assert submitted.status_code == 200
+
+        detail_after = user_client.get(f"/api/user/questionnaires/{version_id}")
+        assert detail_after.status_code == 200
+        existing_answers = detail_after.json()["existing_answers"]
+        assert len(existing_answers) == 1
+        assert existing_answers[0]["question_id"] == question_id
+        assert existing_answers[0]["value"] == {
+            "points": [
+                {"label": "DS", "x": 120, "y": 88},
+                {"label": "MA", "x": 200.5, "y": 101.25},
+            ]
+        }

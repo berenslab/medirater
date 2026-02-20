@@ -412,6 +412,7 @@
                   <option value="multi_choice">multi_choice</option>
                   <option value="short_text">short_text</option>
                   <option value="long_text">long_text</option>
+                  <option value="annotation">annotation</option>
                 </select>
               </div>
               <div>
@@ -503,6 +504,7 @@
                   <option value="multi_choice">multi_choice</option>
                   <option value="short_text">short_text</option>
                   <option value="long_text">long_text</option>
+                  <option value="annotation">annotation</option>
                 </select>
               </div>
               <div>
@@ -955,6 +957,7 @@
               <option value="multi_choice" ${questionType === "multi_choice" ? "selected" : ""}>multi_choice</option>
               <option value="short_text" ${questionType === "short_text" ? "selected" : ""}>short_text</option>
               <option value="long_text" ${questionType === "long_text" ? "selected" : ""}>long_text</option>
+              <option value="annotation" ${questionType === "annotation" ? "selected" : ""}>annotation</option>
             </select>
           </div>
           <div>
@@ -983,7 +986,7 @@
     }
 
     function normalizeQuestionTypeForTemplate(raw) {
-      const allowed = new Set(["single_choice", "multi_choice", "short_text", "long_text"]);
+      const allowed = new Set(["single_choice", "multi_choice", "short_text", "long_text", "annotation"]);
       return allowed.has(raw) ? raw : "short_text";
     }
 
@@ -1822,11 +1825,11 @@
       const isRequired = document.getElementById("patch-required").value === "true";
       const parsedChoices = parseChoices(document.getElementById("patch-choices").value || "");
 
-      if ((questionType === "single_choice" || questionType === "multi_choice") && parsedChoices.length === 0) {
+      if ((questionType === "single_choice" || questionType === "multi_choice" || questionType === "annotation") && parsedChoices.length === 0) {
         throw new Error("Patch template requires choices for choice-based types.");
       }
       if ((questionType === "short_text" || questionType === "long_text") && parsedChoices.length > 0) {
-        throw new Error("Patch template cannot include choices for text types.");
+        throw new Error("Patch template cannot include choices for non-choice types.");
       }
 
       return {
@@ -1870,11 +1873,11 @@
           const isRequired = (card.querySelector("[data-field='required']")?.value || "true") === "true";
           const parsedChoices = parseChoices(card.querySelector("[data-field='choices']")?.value || "");
 
-          if ((questionType === "single_choice" || questionType === "multi_choice") && parsedChoices.length === 0) {
+          if ((questionType === "single_choice" || questionType === "multi_choice" || questionType === "annotation") && parsedChoices.length === 0) {
             throw new Error(`Choice-based template ${index + 1} requires choices.`);
           }
           if ((questionType === "short_text" || questionType === "long_text") && parsedChoices.length > 0) {
-            throw new Error(`Text template ${index + 1} cannot include choices.`);
+            throw new Error(`Non-choice template ${index + 1} cannot include choices.`);
           }
 
           questionTemplates.push({
@@ -2235,11 +2238,11 @@
       const isRequired = document.getElementById("edit-required").value === "true";
       const choiceItems = parseChoices(document.getElementById("edit-choices").value);
 
-      if ((questionType === "single_choice" || questionType === "multi_choice") && choiceItems.length === 0) {
+      if ((questionType === "single_choice" || questionType === "multi_choice" || questionType === "annotation") && choiceItems.length === 0) {
         throw new Error("Choice-based prompt requires choices.");
       }
       if ((questionType === "short_text" || questionType === "long_text") && choiceItems.length > 0) {
-        throw new Error("Text prompt cannot include choices.");
+        throw new Error("Non-choice prompt cannot include choices.");
       }
 
       return { promptText, questionType, isRequired, choiceItems };
