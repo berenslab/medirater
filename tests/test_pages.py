@@ -64,7 +64,7 @@ def test_public_pages_and_route_guards() -> None:
         assert signup.status_code == 200
         assert "Signup" in signup.text
 
-        admin_signup = client.get("/admin_signup")
+        admin_signup = client.get("/admin/signup")
         assert admin_signup.status_code == 200
         assert "Admin or Superadmin signup" in admin_signup.text
 
@@ -135,7 +135,7 @@ def test_logged_in_regular_user_without_yoe_lands_on_account(test_session_factor
         assert signup.status_code == 303
         assert signup.headers["location"] == "/account"
 
-        admin_signup = client.get("/admin_signup", follow_redirects=False)
+        admin_signup = client.get("/admin/signup", follow_redirects=False)
         assert admin_signup.status_code == 303
         assert admin_signup.headers["location"] == "/account"
 

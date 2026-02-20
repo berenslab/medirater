@@ -40,7 +40,7 @@ uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 2008
 Useful URLs:
 
 - `http://127.0.0.1:2008/login`
-- `http://127.0.0.1:2008/admin_signup`
+- `http://127.0.0.1:2008/admin/signup`
 - `http://127.0.0.1:2008/questionnaires`
 - `http://127.0.0.1:2008/users`
 - `http://127.0.0.1:2008/assigned`
@@ -55,7 +55,7 @@ Create a one-time signup token:
 uv run python scripts/create_bootstrap_token.py --expires-in-minutes 120
 ```
 
-Use that token at `http://127.0.0.1:2008/admin_signup`.
+Use that token at `http://127.0.0.1:2008/admin/signup`.
 
 ## Troubleshooting
 

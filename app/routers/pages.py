@@ -193,7 +193,7 @@ def signup_page(
     )
 
 
-@router.get("/admin_signup")
+@router.get("/admin/signup")
 def admin_signup_page(
     request: Request,
     db: Session = Depends(get_db),
