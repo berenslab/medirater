@@ -390,7 +390,7 @@
             </div>
           </section>
           <div id="case-template-disabled-note" class="small hidden">
-            This recipe uses patch-only questions. Case-level templates are disabled.
+            Case-level templates are disabled for this recipe.
           </div>
 
           <section id="patch-template-panel" class="bulk-template-card hidden">
@@ -719,6 +719,11 @@
       const disabledNote = document.getElementById("case-template-disabled-note");
       section.classList.toggle("hidden", !showCaseTemplates);
       disabledNote.classList.toggle("hidden", showCaseTemplates);
+      if (!showCaseTemplates) {
+        disabledNote.textContent = autoCaseTemplateRoot()
+          ? "Case-level templates are auto-generated from recipe settings."
+          : "Case-level templates are disabled for this recipe.";
+      }
 
       if (!showCaseTemplates) {
         clearBulkTemplateCards();
@@ -736,6 +741,64 @@
 
     function recipeConfigFields() {
       return Array.from(recipeConfigHost().querySelectorAll("[data-recipe-config-key]"));
+    }
+
+    function autoCaseTemplateRoot() {
+      return recipeConfigHost().querySelector("[data-auto-case-template]");
+    }
+
+    function buildAutoCaseQuestionTemplate(hideSeconds) {
+      const root = autoCaseTemplateRoot();
+      if (!root) {
+        return null;
+      }
+
+      const promptFromInput = root.querySelector("[data-auto-case-template-prompt]")?.value?.trim() || "";
+      const promptFromAttr = String(root.getAttribute("data-auto-case-template-prompt-template") || "").trim();
+      const promptTemplate = promptFromInput || promptFromAttr;
+      if (!promptTemplate) {
+        throw new Error("Auto-generated case template prompt is missing.");
+      }
+
+      const questionType = String(root.getAttribute("data-auto-case-template-type") || "").trim() || "single_choice";
+      const requiredAttr = String(root.getAttribute("data-auto-case-template-required") || "").trim().toLowerCase();
+      const isRequired = requiredAttr ? requiredAttr === "true" : true;
+
+      const choicesRaw = root.querySelector("[data-auto-case-template-choices]")?.value || "";
+      const parsedChoices = parseChoices(choicesRaw);
+
+      if ((questionType === "single_choice" || questionType === "multi_choice" || questionType === "annotation") && parsedChoices.length === 0) {
+        throw new Error("Provide at least one label in label|value format.");
+      }
+      if ((questionType === "short_text" || questionType === "long_text") && parsedChoices.length > 0) {
+        throw new Error("Auto-generated non-choice template cannot include choices.");
+      }
+
+      return {
+        prompt_template: promptTemplate,
+        question_type: questionType,
+        is_required: isRequired,
+        choices: parsedChoices,
+        config: hideSeconds === null ? {} : { stimulus_hide_after_seconds: hideSeconds },
+      };
+    }
+
+    function prefillAutoCaseTemplateFromCaseTemplates(caseTemplates) {
+      const root = autoCaseTemplateRoot();
+      if (!root) {
+        return;
+      }
+
+      const firstTemplate = caseTemplates[0] || null;
+      const promptInput = root.querySelector("[data-auto-case-template-prompt]");
+      if (promptInput) {
+        promptInput.value = firstTemplate?.prompt_template || "";
+      }
+
+      const choicesInput = root.querySelector("[data-auto-case-template-choices]");
+      if (choicesInput) {
+        choicesInput.value = choicesToText(firstTemplate?.choices || []);
+      }
     }
 
     function setRecipeConfigEmptyState() {
@@ -1127,6 +1190,7 @@
       }
 
       prefillRecipeConfigFromReference(referenceConfig);
+      prefillAutoCaseTemplateFromCaseTemplates(caseTemplates);
 
       document.getElementById("patch-prompt-template").value = patchTemplate?.prompt_template || "";
       document.getElementById("patch-choices").value = choicesToText(patchTemplate?.choices || []);
@@ -1887,6 +1951,12 @@
             choices: parsedChoices,
             config: hideSeconds === null ? {} : { stimulus_hide_after_seconds: hideSeconds },
           });
+        }
+      }
+      if (!questionTemplates.length) {
+        const autoTemplate = buildAutoCaseQuestionTemplate(hideSeconds);
+        if (autoTemplate) {
+          questionTemplates.push(autoTemplate);
         }
       }
 

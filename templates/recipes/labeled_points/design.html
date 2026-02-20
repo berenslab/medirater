@@ -1,8 +1,17 @@
-<div class="small">
-  No extra recipe settings.
-  Define annotation labels in the question template <strong>Choices (label|value)</strong> field.
-  Example:
-  <code>Microaneurysms (MA)|MA</code>,
-  <code>Hemorrhages (HE)|HE</code>,
-  <code>Exudates (EX)|EX</code>.
+<div
+  data-auto-case-template
+  data-auto-case-template-type="annotation"
+  data-auto-case-template-required="true"
+  data-auto-case-template-prompt-template="{case_index} / {case_total}"
+>
+  <label for="recipe-annotation-labels">Annotation labels (label|value per line)</label>
+  <textarea
+    id="recipe-annotation-labels"
+    data-auto-case-template-choices
+    placeholder="Microaneurysms (MA)|MA&#10;Hemorrhages (HE)|HE&#10;Exudates (EX)|EX&#10;Soft Exudates (SE)|SE&#10;Artifact|ARTIFACT&#10;Others|OTHER"
+  ></textarea>
+  <div class="small">
+    This recipe auto-generates one annotation question per image.
+    Only labels are required here.
+  </div>
 </div>

@@ -28,8 +28,8 @@ RECIPE = RegisteredBulkRecipe(
     summary="One image per case with point annotations grouped by label.",
     instructions=[
         "Upload one image file per case.",
-        "Use question template choices to define annotation labels (label|value).",
-        "Use annotation question type to collect x/y coordinates grouped by label value.",
+        "Define annotation labels in recipe settings using label|value format.",
+        "The recipe auto-generates one annotation question per image using those labels.",
     ],
     example_paths=[
         "annotate/OCT/0001.png",
@@ -39,5 +39,6 @@ RECIPE = RegisteredBulkRecipe(
     supports_patch_question_template=False,
     grouper=group_assets,
     forced_case_question_type="annotation",
+    allows_case_question_templates=False,
     catalog_order=30,
 )
