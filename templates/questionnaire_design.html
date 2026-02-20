@@ -471,7 +471,7 @@
           </div>
         </article>
 
-        <article class="card">
+        <article id="manual-editor-card" class="card hidden">
           <details class="manual-editor-panel">
             <summary>Edit existing questions</summary>
             <p class="muted">Use this only to edit/delete generated questions.</p>
@@ -526,6 +526,12 @@
             <div id="edit-status" class="status"></div>
             <div id="selected-question-info" class="small">No question selected.</div>
           </details>
+        </article>
+
+        <article class="card">
+          <div class="row" style="justify-content:flex-end;">
+            <button id="publish-btn-bottom" class="warn">Publish draft</button>
+          </div>
         </article>
       </section>
     </section>
@@ -1234,9 +1240,14 @@
       const isPublished = status === "published";
       const hasActiveRecipe = Boolean(state.activeRecipeType);
       const supportsHide = recipeSupportsStimulusHide(activeRecipeMeta());
-      const publishBtn = document.getElementById("publish-btn");
-      publishBtn.disabled = !(isDraft || isPublished);
-      publishBtn.textContent = isPublished ? "Unpublish" : "Publish draft";
+      const publishButtons = [
+        document.getElementById("publish-btn"),
+        document.getElementById("publish-btn-bottom"),
+      ].filter(Boolean);
+      for (const publishBtn of publishButtons) {
+        publishBtn.disabled = !(isDraft || isPublished);
+        publishBtn.textContent = isPublished ? "Unpublish" : "Publish draft";
+      }
       document.getElementById("save-instructions-btn").disabled = !isDraft;
       document.getElementById("preview-btn").disabled = !isDraft || !hasActiveRecipe;
       document.getElementById("apply-btn").disabled = !isDraft || !hasActiveRecipe;
@@ -1275,10 +1286,14 @@
     }
 
     function renderQuestions() {
+      const manualEditorCard = document.getElementById("manual-editor-card");
       const tbody = document.getElementById("questions-tbody");
       tbody.innerHTML = "";
 
       const questions = state.versionDetail?.questions || [];
+      const hasQuestions = questions.length > 0;
+      manualEditorCard.classList.toggle("hidden", !hasQuestions);
+
       if (!questions.length) {
         const tr = document.createElement("tr");
         tr.innerHTML = '<td colspan="4" class="muted">No questions in this version.</td>';
@@ -2117,7 +2132,7 @@
       }
     });
 
-    document.getElementById("publish-btn").addEventListener("click", async () => {
+    async function handlePublishToggle() {
       try {
         const versionMeta = selectedVersionMeta();
         if (!versionMeta) {
@@ -2141,7 +2156,10 @@
       } catch (error) {
         setStatus("version-status", error.message || String(error), "err");
       }
-    });
+    }
+
+    document.getElementById("publish-btn").addEventListener("click", handlePublishToggle);
+    document.getElementById("publish-btn-bottom").addEventListener("click", handlePublishToggle);
 
     document.getElementById("save-instructions-btn").addEventListener("click", async () => {
       try {
