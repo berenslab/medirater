@@ -94,11 +94,11 @@
     .ok { color: var(--ok); }
     .err { color: var(--err); }
     .annotation-panel {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #ffffff;
-      padding: 10px;
-      margin-top: 10px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+      margin-top: 6px;
     }
     .annotation-workspace {
       display: grid;
@@ -112,10 +112,10 @@
     .canvas-wrap {
       position: relative;
       overflow: auto;
-      border: 1px dashed var(--border);
-      border-radius: 8px;
-      background: #fff;
-      padding: 8px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
       max-width: 100%;
     }
     .annotation-canvas {
@@ -123,14 +123,13 @@
       background: #f9fcff;
       cursor: crosshair;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 4px;
       max-width: none;
       touch-action: none;
     }
     .magnifier-canvas {
-      position: absolute;
-      right: 14px;
-      bottom: 14px;
+      display: block;
+      margin-top: 8px;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: #fff;
@@ -141,21 +140,26 @@
       position: fixed;
       right: auto;
       bottom: auto;
+      margin-top: 0;
       z-index: 20;
     }
     .workspace-side {
       display: grid;
-      gap: 10px;
+      gap: 14px;
     }
     .panel {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #fbfdff;
-      padding: 9px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+    }
+    .panel + .panel {
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
     }
     .panel h3 {
-      margin: 0 0 8px;
-      font-size: 0.92rem;
+      margin: 0 0 6px;
+      font-size: 0.9rem;
     }
     .panel-head {
       display: flex;
@@ -165,11 +169,11 @@
       margin-bottom: 8px;
     }
     .question-block {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #fff;
-      padding: 10px;
-      margin-top: 10px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+      margin-top: 8px;
     }
     .required { color: #b42318; }
     .option-grid {
@@ -191,6 +195,22 @@
       background: #fff;
       padding: 5px 7px;
     }
+    .slider-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .slider-line input[type="range"] {
+      flex: 1 1 auto;
+      margin: 0;
+    }
+    .slider-value {
+      min-width: 50px;
+      text-align: right;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
     .inline-check {
       display: flex;
       align-items: center;
@@ -204,15 +224,16 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      border: 1px solid transparent;
-      border-radius: 6px;
-      padding: 4px 6px;
+      border: 0;
+      border-radius: 0;
+      padding: 4px 0;
       cursor: pointer;
       font-size: 0.86rem;
     }
     .label-choice.active {
-      border-color: #aac3da;
-      background: #eef5fb;
+      border: 0;
+      background: transparent;
+      font-weight: 600;
     }
     .label-swatch {
       width: 10px;
@@ -223,23 +244,27 @@
     .point-list {
       max-height: 232px;
       overflow: auto;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px;
-      background: #fff;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
       font-size: 0.84rem;
     }
     .point-row {
-      border: 1px solid #e3ecf4;
-      border-radius: 7px;
-      padding: 6px;
-      margin-bottom: 6px;
-      background: #f9fcff;
+      border: 0;
+      border-bottom: 1px solid #e3ecf4;
+      border-radius: 0;
+      padding: 6px 0;
+      margin-bottom: 0;
+      background: transparent;
     }
-    .point-row:last-child { margin-bottom: 0; }
+    .point-row:last-child { border-bottom: 0; }
     .point-row.active {
-      border-color: #6ca6d8;
-      background: #eaf4fd;
+      border-bottom: 1px solid #e3ecf4;
+      border-radius: 4px;
+      padding-left: 4px;
+      padding-right: 4px;
+      background: #eef6fd;
     }
     .point-row-main {
       display: flex;
@@ -283,13 +308,6 @@
       }
       .workspace-side {
         grid-template-columns: 1fr;
-      }
-      .magnifier-canvas.floating {
-        position: absolute;
-        right: 14px;
-        bottom: 14px;
-        left: auto !important;
-        top: auto !important;
       }
     }
   </style>
@@ -562,8 +580,8 @@
           <div class="workspace-main">
             <div class="canvas-wrap">
               <canvas class="annotation-canvas" data-canvas></canvas>
-              <canvas class="magnifier-canvas" width="100" height="100" data-mag-canvas></canvas>
             </div>
+            <canvas class="magnifier-canvas" width="100" height="100" data-mag-canvas></canvas>
           </div>
           <aside class="workspace-side">
             <section class="panel">
@@ -574,11 +592,17 @@
                 <label class="inline-check"><input type="checkbox" data-mag-marker /> Show center marker</label>
                 <label>
                   Magnifier size
-                  <select data-mag-size></select>
+                  <span class="slider-line">
+                    <input type="range" min="50" max="280" step="10" data-mag-size />
+                    <span class="slider-value" data-mag-size-value></span>
+                  </span>
                 </label>
                 <label>
                   Zoom level
-                  <select data-mag-zoom></select>
+                  <span class="slider-line">
+                    <input type="range" min="1.2" max="6" step="0.1" data-mag-zoom />
+                    <span class="slider-value" data-mag-zoom-value></span>
+                  </span>
                 </label>
               </div>
             </section>
@@ -610,12 +634,12 @@
       const magFixed = wrapper.querySelector("[data-mag-fixed]");
       const magMarker = wrapper.querySelector("[data-mag-marker]");
       const magSize = wrapper.querySelector("[data-mag-size]");
+      const magSizeValue = wrapper.querySelector("[data-mag-size-value]");
       const magZoom = wrapper.querySelector("[data-mag-zoom]");
+      const magZoomValue = wrapper.querySelector("[data-mag-zoom-value]");
       const magCanvas = wrapper.querySelector("[data-mag-canvas]");
       const magCtx = magCanvas.getContext("2d");
       const image = new Image();
-      const magnifierSizeOptions = [50, 100, 150, 200, 250];
-      const magnifierZoomOptions = [1.5, 2, 2.5, 3, 4];
       let displayScale = 1;
       let selectedLabelValue = String(labelOptions[0]?.value || "").trim();
       let activePointIndex = -1;
@@ -649,38 +673,16 @@
       });
       syncLabelSelectionUi();
 
-      for (const size of magnifierSizeOptions) {
-        const option = document.createElement("option");
-        option.value = String(size);
-        option.textContent = String(size);
-        magSize.appendChild(option);
-      }
-      for (const zoom of magnifierZoomOptions) {
-        const option = document.createElement("option");
-        option.value = String(zoom);
-        option.textContent = `${zoom}x`;
-        magZoom.appendChild(option);
-      }
-
-      function nearestFromAllowed(rawValue, allowed, fallback) {
-        if (!Number.isFinite(rawValue)) return fallback;
-        let best = fallback;
-        let bestDistance = Number.POSITIVE_INFINITY;
-        for (const value of allowed) {
-          const distance = Math.abs(value - rawValue);
-          if (distance < bestDistance) {
-            best = value;
-            bestDistance = distance;
-          }
-        }
-        return best;
+      function clamp(value, min, max, fallback) {
+        if (!Number.isFinite(value)) return fallback;
+        return Math.max(min, Math.min(max, value));
       }
 
       magEnabled.checked = Boolean(magnifier.enabled);
       magFixed.checked = Boolean(magnifier.fixed);
       magMarker.checked = Boolean(magnifier.show_center_marker);
-      magSize.value = String(nearestFromAllowed(magnifier.size, magnifierSizeOptions, DEFAULT_MAGNIFIER.size));
-      magZoom.value = String(nearestFromAllowed(magnifier.zoom, magnifierZoomOptions, DEFAULT_MAGNIFIER.zoom));
+      magSize.value = String(clamp(Number(magnifier.size), 50, 280, DEFAULT_MAGNIFIER.size));
+      magZoom.value = String(clamp(Number(magnifier.zoom), 1.2, 6, DEFAULT_MAGNIFIER.zoom));
       magCanvas.width = Number.parseInt(magSize.value || "100", 10);
       magCanvas.height = Number.parseInt(magSize.value || "100", 10);
 
@@ -863,8 +865,10 @@
         canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
         redraw();
         renderPointsList();
-        if (magEnabled.checked) {
+        if (magEnabled.checked && magFixed.checked) {
           drawMagnifier(Number.NaN, Number.NaN);
+        } else {
+          magCanvas.style.display = "none";
         }
       };
       image.src = `/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/assets/${assetId}/content`;
@@ -908,6 +912,7 @@
           return;
         }
         magCtx.clearRect(0, 0, magCanvas.width, magCanvas.height);
+        magCanvas.style.display = "none";
       });
 
       undoBtn.addEventListener("click", () => {
@@ -934,6 +939,8 @@
         const zoom = Math.max(1.2, Math.min(6, Number.parseFloat(magZoom.value || "2")));
         magCanvas.width = size;
         magCanvas.height = size;
+        magSizeValue.textContent = `${size}px`;
+        magZoomValue.textContent = `${zoom.toFixed(1)}x`;
         persistMagnifierToStorage({
           enabled: magEnabled.checked,
           fixed: magFixed.checked,
@@ -944,19 +951,26 @@
         if (magEnabled.checked) {
           if (lastPointerClient) {
             drawMagnifier(lastPointerClient.x, lastPointerClient.y);
-          } else {
+          } else if (magFixed.checked) {
             drawMagnifier(Number.NaN, Number.NaN);
+          } else {
+            magCanvas.style.display = "none";
+            magCtx.clearRect(0, 0, magCanvas.width, magCanvas.height);
           }
         } else {
+          magCanvas.classList.remove("floating");
+          magCanvas.style.left = "";
+          magCanvas.style.top = "";
           magCtx.clearRect(0, 0, magCanvas.width, magCanvas.height);
+          magCanvas.style.display = "none";
         }
       }
 
       magEnabled.addEventListener("change", syncMagnifierSettings);
       magFixed.addEventListener("change", syncMagnifierSettings);
       magMarker.addEventListener("change", syncMagnifierSettings);
-      magSize.addEventListener("change", syncMagnifierSettings);
-      magZoom.addEventListener("change", syncMagnifierSettings);
+      magSize.addEventListener("input", syncMagnifierSettings);
+      magZoom.addEventListener("input", syncMagnifierSettings);
       syncMagnifierSettings();
       syncAnswerState();
 
