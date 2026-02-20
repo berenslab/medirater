@@ -2,6 +2,15 @@
 
 `medirater` is a questionaire web app for evalutating medical images.
 
+### Screenshots
+
+**Evaluater**
+
+![evaluater](.github/screenshots/medirater-evaluater.png)
+
+**Annotator**
+
+![annotator](.github/screenshots/medirater-annotator.png)
 
 ## Install and run it locally
 
@@ -36,7 +45,3 @@ Use that token at:
 After creating the first superadmin account, manage signup mode and invite tokens from:
 
 - `http://localhost:8000/users`
-
-## Extended docs
-
-For installation details, deployment notes, API overview, and recipe extension examples, see `docs/`.
