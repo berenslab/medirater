@@ -20,6 +20,8 @@ from app.models import (
     QuestionnaireVersionStatus,
     Role,
     Response,
+    ResponseDraft,
+    ResponseDraftItem,
     ResponseItem,
     User,
     UserAssignment,
@@ -33,6 +35,8 @@ from app.schemas import (
     QuestionnaireConsentRequest,
     QuestionOut,
     QuestionnaireForAnswerOut,
+    SaveQuestionnaireDraftRequest,
+    SaveQuestionnaireDraftResponse,
     SubmitQuestionnaireRequest,
     SubmitQuestionnaireResponse,
 )
@@ -289,6 +293,37 @@ def _get_consent_record(
     )
 
 
+def _normalize_answers_for_version(
+    version: QuestionnaireVersion,
+    raw_answers: list[Any],
+) -> tuple[dict[str, Question], dict[str, Any]]:
+    question_by_id = {question.id: question for question in version.questions}
+    if not question_by_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Questionnaire has no questions",
+        )
+
+    answer_by_question: dict[str, Any] = {}
+    for item in raw_answers:
+        question_id = item.question_id
+        if question_id not in question_by_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown question id {question_id}",
+            )
+        if question_id in answer_by_question:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Duplicate answer for question id {question_id}",
+            )
+        answer_by_question[question_id] = _normalize_answer_value(
+            question_by_id[question_id],
+            item.value,
+        )
+    return question_by_id, answer_by_question
+
+
 @router.get("/assigned-questionnaires", response_model=list[AssignedQuestionnaireOut])
 def list_assigned_questionnaires(
     current_user: User = Depends(get_current_user),
@@ -393,18 +428,27 @@ def get_assigned_questionnaire_for_answer(
         .where(Response.user_id == current_user.id)
         .where(Response.questionnaire_version_id == version.id)
     )
-    existing_answers: list[ExistingAnswerOut] = []
-    if existing_response:
-        for item in existing_response.items:
-            existing_answers.append(
-                ExistingAnswerOut(
-                    question_id=item.question_id,
-                    value=_parse_json_any(item.answer_json),
-                )
-            )
+    existing_draft = db.scalar(
+        select(ResponseDraft)
+        .options(selectinload(ResponseDraft.items))
+        .where(ResponseDraft.user_id == current_user.id)
+        .where(ResponseDraft.questionnaire_version_id == version.id)
+    )
 
     questions = sorted(version.questions, key=lambda item: item.position)
     questionnaire = version.questionnaire
+    existing_answer_by_question_id: dict[str, Any] = {}
+    if existing_response:
+        for item in existing_response.items:
+            existing_answer_by_question_id[item.question_id] = _parse_json_any(item.answer_json)
+    if existing_draft:
+        for item in existing_draft.items:
+            existing_answer_by_question_id[item.question_id] = _parse_json_any(item.answer_json)
+    existing_answers = [
+        ExistingAnswerOut(question_id=question.id, value=existing_answer_by_question_id[question.id])
+        for question in questions
+        if question.id in existing_answer_by_question_id
+    ]
 
     return QuestionnaireForAnswerOut(
         questionnaire_id=questionnaire.id,
@@ -489,6 +533,84 @@ def record_questionnaire_consent(
 
 
 @router.post(
+    "/questionnaires/{questionnaire_version_id}/draft",
+    response_model=SaveQuestionnaireDraftResponse,
+)
+def save_assigned_questionnaire_draft(
+    questionnaire_version_id: str,
+    payload: SaveQuestionnaireDraftRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SaveQuestionnaireDraftResponse:
+    version = _get_accessible_published_version(
+        db,
+        user=current_user,
+        questionnaire_version_id=questionnaire_version_id,
+    )
+    consent = _get_consent_record(
+        db,
+        user_id=current_user.id,
+        questionnaire_version_id=version.id,
+    )
+    if not consent:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Consent is required before saving answers",
+        )
+
+    _, answer_by_question = _normalize_answers_for_version(version, payload.answers)
+    saved_at = utcnow()
+    draft_record = db.scalar(
+        select(ResponseDraft)
+        .where(ResponseDraft.user_id == current_user.id)
+        .where(ResponseDraft.questionnaire_version_id == questionnaire_version_id)
+    )
+
+    if not answer_by_question:
+        if draft_record:
+            db.execute(delete(ResponseDraftItem).where(ResponseDraftItem.response_draft_id == draft_record.id))
+            db.execute(delete(ResponseDraft).where(ResponseDraft.id == draft_record.id))
+            db.commit()
+        return SaveQuestionnaireDraftResponse(
+            draft_id=None,
+            saved_at=saved_at,
+            answer_count=0,
+        )
+
+    if not draft_record:
+        draft_record = ResponseDraft(
+            user_id=current_user.id,
+            questionnaire_version_id=questionnaire_version_id,
+            saved_at=saved_at,
+        )
+        db.add(draft_record)
+        db.flush()
+    else:
+        draft_record.saved_at = saved_at
+        db.execute(delete(ResponseDraftItem).where(ResponseDraftItem.response_draft_id == draft_record.id))
+        db.flush()
+
+    for question in sorted(version.questions, key=lambda item: item.position):
+        if question.id not in answer_by_question:
+            continue
+        db.add(
+            ResponseDraftItem(
+                response_draft_id=draft_record.id,
+                question_id=question.id,
+                answer_json=json.dumps(answer_by_question[question.id]),
+            )
+        )
+
+    db.commit()
+    db.refresh(draft_record)
+    return SaveQuestionnaireDraftResponse(
+        draft_id=draft_record.id,
+        saved_at=draft_record.saved_at,
+        answer_count=len(answer_by_question),
+    )
+
+
+@router.post(
     "/questionnaires/{questionnaire_version_id}/responses",
     response_model=SubmitQuestionnaireResponse,
 )
@@ -514,29 +636,7 @@ def submit_assigned_questionnaire_response(
             detail="Consent is required before submitting answers",
         )
 
-    question_by_id = {question.id: question for question in version.questions}
-    if not question_by_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Questionnaire has no questions",
-        )
-
-    answer_by_question: dict[str, Any] = {}
-    for item in payload.answers:
-        if item.question_id not in question_by_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown question id {item.question_id}",
-            )
-        if item.question_id in answer_by_question:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Duplicate answer for question id {item.question_id}",
-            )
-        answer_by_question[item.question_id] = _normalize_answer_value(
-            question_by_id[item.question_id],
-            item.value,
-        )
+    question_by_id, answer_by_question = _normalize_answers_for_version(version, payload.answers)
 
     for question in question_by_id.values():
         if not question.is_required:
@@ -594,6 +694,15 @@ def submit_assigned_questionnaire_response(
                 answer_json=json.dumps(answer_by_question[question.id]),
             )
         )
+
+    draft_record = db.scalar(
+        select(ResponseDraft)
+        .where(ResponseDraft.user_id == current_user.id)
+        .where(ResponseDraft.questionnaire_version_id == questionnaire_version_id)
+    )
+    if draft_record:
+        db.execute(delete(ResponseDraftItem).where(ResponseDraftItem.response_draft_id == draft_record.id))
+        db.execute(delete(ResponseDraft).where(ResponseDraft.id == draft_record.id))
 
     db.commit()
     db.refresh(response_record)

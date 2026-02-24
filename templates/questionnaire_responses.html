@@ -149,10 +149,16 @@
 
     <section class="content">
       <article class="card">
-        <h2>Submissions</h2>
+        <h2>Responses</h2>
         <div class="row">
           <label for="version-filter">Version</label>
           <select id="version-filter"></select>
+          <label for="status-filter">Status</label>
+          <select id="status-filter">
+            <option value="all">All</option>
+            <option value="submitted">Submitted</option>
+            <option value="in_progress">In progress</option>
+          </select>
           <button id="refresh-btn" class="secondary">Refresh</button>
           <button id="export-btn">Export CSV</button>
         </div>
@@ -164,7 +170,8 @@
               <th>User</th>
               <th>Role</th>
               <th>Version</th>
-              <th>Submitted</th>
+              <th>Status</th>
+              <th>Recorded</th>
               <th>Answers</th>
               <th>Action</th>
             </tr>
@@ -239,6 +246,12 @@
       }
     }
 
+    function formatResponseStatus(value) {
+      if (value === "in_progress") return "In progress";
+      if (value === "submitted") return "Submitted";
+      return value || "-";
+    }
+
     function renderVersionFilter() {
       const select = document.getElementById("version-filter");
       select.innerHTML = "";
@@ -270,7 +283,7 @@
 
       if (!state.responses.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="6" class="muted">No responses yet.</td>';
+        tr.innerHTML = '<td colspan="7" class="muted">No responses yet.</td>';
         tbody.appendChild(tr);
         return;
       }
@@ -281,7 +294,8 @@
           <td>${item.username}</td>
           <td>${item.user_role}</td>
           <td>v${item.questionnaire_version_number}</td>
-          <td>${item.submitted_at}</td>
+          <td>${formatResponseStatus(item.response_status)}</td>
+          <td>${item.recorded_at}</td>
           <td>${item.answer_count}</td>
           <td><button type="button" data-open-response-id="${item.response_id}">Open</button></td>
         `;
@@ -297,8 +311,10 @@
     }
 
     function renderResponseDetail(detail) {
+      const statusText = formatResponseStatus(detail.response_status);
+      const recordedAt = detail.recorded_at || detail.submitted_at || detail.saved_at || "-";
       document.getElementById("detail-meta").innerHTML = `
-        ${detail.username} (${detail.user_role}) submitted at ${detail.submitted_at} on v${detail.questionnaire_version_number}
+        ${detail.username} (${detail.user_role}) ${statusText.toLowerCase()} at ${recordedAt} on v${detail.questionnaire_version_number}
         <div class="mono">response ${detail.response_id}</div>
       `;
 
@@ -334,8 +350,12 @@
     async function loadResponses() {
       try {
         const versionId = document.getElementById("version-filter").value;
+        const statusFilter = document.getElementById("status-filter").value;
         const query = new URLSearchParams();
         if (versionId) query.set("version_id", versionId);
+        if (statusFilter && statusFilter !== "all") {
+          query.set("response_status", statusFilter);
+        }
 
         const url = query.toString()
           ? `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/responses?${query.toString()}`
@@ -355,12 +375,16 @@
     function exportCsv() {
       try {
         const versionId = document.getElementById("version-filter").value;
+        const statusFilter = document.getElementById("status-filter").value;
         if (!versionId) {
           setStatus("list-status", "Select a specific version before exporting CSV.", false);
           return;
         }
         const query = new URLSearchParams();
         query.set("version_id", versionId);
+        if (statusFilter && statusFilter !== "all") {
+          query.set("response_status", statusFilter);
+        }
         const url = `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/responses/export.csv?${query.toString()}`;
         window.location.assign(url);
       } catch (error) {
@@ -395,6 +419,7 @@
     document.getElementById("refresh-btn").addEventListener("click", loadResponses);
     document.getElementById("export-btn").addEventListener("click", exportCsv);
     document.getElementById("version-filter").addEventListener("change", loadResponses);
+    document.getElementById("status-filter").addEventListener("change", loadResponses);
 
     init().catch((error) => {
       setStatus("list-status", error.message || String(error), false);

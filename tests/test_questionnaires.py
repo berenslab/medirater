@@ -12,6 +12,8 @@ from app.models import (
     QuestionnaireConsent,
     QuestionnaireVersion,
     Response,
+    ResponseDraft,
+    ResponseDraftItem,
     ResponseItem,
     Role,
     UserAssignment,
@@ -527,6 +529,12 @@ def test_delete_questionnaire_cascades_assets_and_answers(test_session_factory) 
         )
         assert consent.status_code == 200
 
+        draft_saved = user_client.post(
+            f"/api/user/questionnaires/{version_id}/draft",
+            json={"answers": [{"question_id": question_id, "value": "draft"}]},
+        )
+        assert draft_saved.status_code == 200
+
         submitted = user_client.post(
             f"/api/user/questionnaires/{version_id}/responses",
             json={"answers": [{"question_id": question_id, "value": "ok"}]},
@@ -571,6 +579,14 @@ def test_delete_questionnaire_cascades_assets_and_answers(test_session_factory) 
             select(func.count(ResponseItem.id))
             .join(Response, Response.id == ResponseItem.response_id)
             .where(Response.questionnaire_version_id == version_id)
+        ) == 0
+        assert db.scalar(
+            select(func.count(ResponseDraft.id)).where(ResponseDraft.questionnaire_version_id == version_id)
+        ) == 0
+        assert db.scalar(
+            select(func.count(ResponseDraftItem.id))
+            .join(ResponseDraft, ResponseDraft.id == ResponseDraftItem.response_draft_id)
+            .where(ResponseDraft.questionnaire_version_id == version_id)
         ) == 0
         assert db.scalar(
             select(func.count(UserAssignment.id)).where(

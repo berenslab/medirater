@@ -65,8 +65,8 @@ Major endpoints:
   - `PATCH /api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions/{question_id}`
   - `DELETE /api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions/{question_id}`
 - Responses:
-  - `GET /api/admin/questionnaires/{questionnaire_id}/responses`
-  - `GET /api/admin/questionnaires/{questionnaire_id}/responses/export.csv`
+  - `GET /api/admin/questionnaires/{questionnaire_id}/responses` (supports `response_status=all|submitted|in_progress`)
+  - `GET /api/admin/questionnaires/{questionnaire_id}/responses/export.csv` (supports `response_status=all|submitted|in_progress`)
 - Bulk recipes:
   - `GET /api/admin/questionnaires/bulk-recipes/catalog`
   - `GET /api/admin/questionnaires/bulk-recipes/{recipe_type}/design`
@@ -88,5 +88,6 @@ Major endpoints:
 - `GET /api/user/questionnaires/{questionnaire_version_id}`
 - `GET /api/user/questionnaires/{questionnaire_version_id}/consent`
 - `POST /api/user/questionnaires/{questionnaire_version_id}/consent`
-- `POST /api/user/questionnaires/{questionnaire_version_id}/submit`
+- `POST /api/user/questionnaires/{questionnaire_version_id}/draft`
+- `POST /api/user/questionnaires/{questionnaire_version_id}/responses`
 - `GET /api/user/questionnaires/{questionnaire_version_id}/assets/{asset_id}/content`

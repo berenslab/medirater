@@ -140,6 +140,16 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
         )
         assert user_token.status_code == 200
 
+        user_token_for_draft = admin_a_client.post(
+            "/api/admin/signup-tokens",
+            json={
+                "role": "user",
+                "expires_in_minutes": 60,
+                "questionnaire_version_ids": [version_id],
+            },
+        )
+        assert user_token_for_draft.status_code == 200
+
     with TestClient(app) as user_client:
         _signup(user_client, "alice", token=user_token.json()["token"])
 
@@ -155,6 +165,21 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
         )
         assert submitted.status_code == 200
 
+    with TestClient(app) as draft_user_client:
+        _signup(draft_user_client, "bob", token=user_token_for_draft.json()["token"])
+
+        consent = draft_user_client.post(
+            f"/api/user/questionnaires/{version_id}/consent",
+            json={"consented": True},
+        )
+        assert consent.status_code == 200
+
+        saved_draft = draft_user_client.post(
+            f"/api/user/questionnaires/{version_id}/draft",
+            json={"answers": [{"question_id": question_id, "value": "mild"}]},
+        )
+        assert saved_draft.status_code == 200
+
     with TestClient(app) as admin_a_client:
         _login(admin_a_client, "admin_a")
 
@@ -169,19 +194,45 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
         )
         assert response_list.status_code == 200
         response_items = response_list.json()
-        assert len(response_items) == 1
-        assert response_items[0]["username"] == "alice"
-        response_id = response_items[0]["response_id"]
+        assert len(response_items) == 2
+        by_username = {item["username"]: item for item in response_items}
+        assert by_username["alice"]["response_status"] == "submitted"
+        assert by_username["bob"]["response_status"] == "in_progress"
+        submitted_response_id = by_username["alice"]["response_id"]
+        draft_response_id = by_username["bob"]["response_id"]
+        assert by_username["alice"]["submitted_at"] is not None
+        assert by_username["bob"]["submitted_at"] is None
+        assert by_username["bob"]["saved_at"] is not None
+
+        in_progress_only = admin_a_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/responses?response_status=in_progress"
+        )
+        assert in_progress_only.status_code == 200
+        in_progress_items = in_progress_only.json()
+        assert len(in_progress_items) == 1
+        assert in_progress_items[0]["username"] == "bob"
+        assert in_progress_items[0]["response_status"] == "in_progress"
 
         response_detail = admin_a_client.get(
-            f"/api/admin/questionnaires/{questionnaire_id}/responses/{response_id}"
+            f"/api/admin/questionnaires/{questionnaire_id}/responses/{submitted_response_id}"
         )
         assert response_detail.status_code == 200
         detail_json = response_detail.json()
         assert detail_json["username"] == "alice"
+        assert detail_json["response_status"] == "submitted"
         assert len(detail_json["items"]) == 1
         assert detail_json["items"][0]["question_prompt_text"] == "How severe is this case?"
         assert detail_json["items"][0]["answer_value"] == "severe"
+
+        draft_detail = admin_a_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/responses/{draft_response_id}"
+        )
+        assert draft_detail.status_code == 200
+        draft_detail_json = draft_detail.json()
+        assert draft_detail_json["username"] == "bob"
+        assert draft_detail_json["response_status"] == "in_progress"
+        assert len(draft_detail_json["items"]) == 1
+        assert draft_detail_json["items"][0]["answer_value"] == "mild"
 
         exported_csv = admin_a_client.get(
             f"/api/admin/questionnaires/{questionnaire_id}/responses/export.csv"
@@ -194,19 +245,32 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
         assert "username" in csv_body
         assert "v1_q1" not in csv_body
         csv_rows = list(csv.DictReader(io.StringIO(csv_body)))
-        assert len(csv_rows) == 1
-        exported_row = csv_rows[0]
-        assert exported_row["username"] == "alice"
-        assert exported_row["answer_value"] == "severe"
-        assert exported_row["question_identifier"] == "c1q1"
-        assert exported_row["case_key"] == "case-0001"
-        assert exported_row["case_image_filenames"] == "Task1/1.png"
+        assert len(csv_rows) == 2
+        csv_by_username = {row["username"]: row for row in csv_rows}
+        alice_row = csv_by_username["alice"]
+        bob_row = csv_by_username["bob"]
+        assert alice_row["answer_value"] == "severe"
+        assert alice_row["response_status"] == "submitted"
+        assert bob_row["answer_value"] == "mild"
+        assert bob_row["response_status"] == "in_progress"
+        assert alice_row["question_identifier"] == "c1q1"
+        assert alice_row["case_key"] == "case-0001"
+        assert alice_row["case_image_filenames"] == "Task1/1.png"
 
         exported_csv_filtered = admin_a_client.get(
             f"/api/admin/questionnaires/{questionnaire_id}/responses/export.csv?version_id={version_id}"
         )
         assert exported_csv_filtered.status_code == 200
         assert exported_csv_filtered.text == csv_body
+
+        exported_csv_in_progress = admin_a_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/responses/export.csv?version_id={version_id}&response_status=in_progress"
+        )
+        assert exported_csv_in_progress.status_code == 200
+        in_progress_rows = list(csv.DictReader(io.StringIO(exported_csv_in_progress.text)))
+        assert len(in_progress_rows) == 1
+        assert in_progress_rows[0]["username"] == "bob"
+        assert in_progress_rows[0]["response_status"] == "in_progress"
 
     with TestClient(app) as admin_b_client:
         _signup(admin_b_client, "admin_b", token=admin_b_token.json()["token"])
@@ -233,14 +297,14 @@ def test_admin_and_superadmin_can_review_questionnaire_responses(test_session_fa
 
         response_list = super_client.get(f"/api/admin/questionnaires/{questionnaire_id}/responses")
         assert response_list.status_code == 200
-        assert len(response_list.json()) == 1
+        assert len(response_list.json()) == 2
 
         response_id = response_list.json()[0]["response_id"]
         response_detail = super_client.get(
             f"/api/admin/questionnaires/{questionnaire_id}/responses/{response_id}"
         )
         assert response_detail.status_code == 200
-        assert response_detail.json()["items"][0]["answer_value"] == "severe"
+        assert response_detail.json()["items"][0]["answer_value"] in {"severe", "mild"}
 
         super_export = super_client.get(
             f"/api/admin/questionnaires/{questionnaire_id}/responses/export.csv"

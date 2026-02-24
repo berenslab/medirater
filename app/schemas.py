@@ -304,12 +304,15 @@ class QuestionnaireDetailOut(BaseModel):
 
 class AdminResponseSummaryOut(BaseModel):
     response_id: str
+    response_status: str
     questionnaire_id: str
     questionnaire_version_id: str
     questionnaire_version_number: int
     username: str
     user_role: Role
-    submitted_at: datetime
+    recorded_at: datetime
+    submitted_at: datetime | None = None
+    saved_at: datetime | None = None
     answer_count: int
 
 
@@ -323,12 +326,15 @@ class AdminResponseItemOut(BaseModel):
 
 class AdminResponseDetailOut(BaseModel):
     response_id: str
+    response_status: str
     questionnaire_id: str
     questionnaire_version_id: str
     questionnaire_version_number: int
     username: str
     user_role: Role
-    submitted_at: datetime
+    recorded_at: datetime
+    submitted_at: datetime | None = None
+    saved_at: datetime | None = None
     items: list[AdminResponseItemOut] = Field(default_factory=list)
 
 
@@ -374,6 +380,16 @@ class QuestionnaireConsentOut(BaseModel):
 class SubmitAnswerItem(BaseModel):
     question_id: str = Field(min_length=1)
     value: Any
+
+
+class SaveQuestionnaireDraftRequest(BaseModel):
+    answers: list[SubmitAnswerItem] = Field(default_factory=list)
+
+
+class SaveQuestionnaireDraftResponse(BaseModel):
+    draft_id: str | None = None
+    saved_at: datetime
+    answer_count: int
 
 
 class SubmitQuestionnaireRequest(BaseModel):

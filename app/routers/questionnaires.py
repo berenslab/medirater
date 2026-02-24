@@ -24,6 +24,8 @@ from app.models import (
     QuestionnaireVersion,
     QuestionnaireVersionStatus,
     Response,
+    ResponseDraft,
+    ResponseDraftItem,
     ResponseItem,
     Role,
     User,
@@ -65,6 +67,9 @@ router = APIRouter(prefix="/api/admin/questionnaires", tags=["questionnaires"])
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+RESPONSE_STATUS_SUBMITTED = "submitted"
+RESPONSE_STATUS_IN_PROGRESS = "in_progress"
+
 
 def _is_superadmin(user: User) -> bool:
     return user.role == Role.SUPERADMIN
@@ -97,6 +102,25 @@ def _stringify_answer_value(value: Any) -> str:
     if isinstance(value, str):
         return value
     return json.dumps(value)
+
+
+def _encode_admin_response_id(*, status: str, raw_id: str) -> str:
+    return f"{status}:{raw_id}"
+
+
+def _decode_admin_response_id(response_id: str) -> tuple[str, str]:
+    raw = str(response_id).strip()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Response not found")
+    if ":" not in raw:
+        # Backward compatibility for older clients that passed the submitted response UUID directly.
+        return RESPONSE_STATUS_SUBMITTED, raw
+    prefix, value = raw.split(":", 1)
+    normalized_prefix = prefix.strip().lower()
+    normalized_value = value.strip()
+    if normalized_prefix not in {RESPONSE_STATUS_SUBMITTED, RESPONSE_STATUS_IN_PROGRESS} or not normalized_value:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Response not found")
+    return normalized_prefix, normalized_value
 
 
 def _recipe_design_template_name(recipe_type: str) -> str:
@@ -653,51 +677,112 @@ def list_questionnaire_responses(
     db: Session = Depends(get_db),
     version_id: str | None = Query(default=None),
     username: str | None = Query(default=None),
+    response_status: str = Query(default="all"),
 ) -> list[AdminResponseSummaryOut]:
     questionnaire = _get_accessible_questionnaire(
         db, questionnaire_id=questionnaire_id, user=current_user
     )
-    stmt = (
-        select(Response, User, QuestionnaireVersion)
-        .join(User, User.id == Response.user_id)
-        .join(QuestionnaireVersion, QuestionnaireVersion.id == Response.questionnaire_version_id)
-        .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
-        .order_by(desc(Response.submitted_at))
-        .limit(1000)
-    )
-    if version_id:
-        stmt = stmt.where(Response.questionnaire_version_id == version_id)
-    if username:
-        stmt = stmt.where(User.username == normalize_username(username))
-
-    rows = db.execute(stmt).all()
-    if not rows:
-        return []
-
-    response_ids = [response.id for response, _, _ in rows]
-    count_rows = db.execute(
-        select(ResponseItem.response_id, func.count(ResponseItem.id))
-        .where(ResponseItem.response_id.in_(response_ids))
-        .group_by(ResponseItem.response_id)
-    ).all()
-    answer_count_by_response_id = {
-        response_id: int(answer_count)
-        for response_id, answer_count in count_rows
-    }
-
-    return [
-        AdminResponseSummaryOut(
-            response_id=response.id,
-            questionnaire_id=questionnaire.id,
-            questionnaire_version_id=version.id,
-            questionnaire_version_number=version.version_number,
-            username=user.username,
-            user_role=user.role,
-            submitted_at=response.submitted_at,
-            answer_count=answer_count_by_response_id.get(response.id, 0),
+    normalized_status = str(response_status or "all").strip().lower()
+    if normalized_status not in {"all", RESPONSE_STATUS_SUBMITTED, RESPONSE_STATUS_IN_PROGRESS}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="response_status must be one of: all, submitted, in_progress",
         )
-        for response, user, version in rows
-    ]
+
+    normalized_username = normalize_username(username) if username else None
+    include_submitted = normalized_status in {"all", RESPONSE_STATUS_SUBMITTED}
+    include_in_progress = normalized_status in {"all", RESPONSE_STATUS_IN_PROGRESS}
+
+    summary_items: list[AdminResponseSummaryOut] = []
+
+    if include_submitted:
+        response_stmt = (
+            select(Response, User, QuestionnaireVersion)
+            .join(User, User.id == Response.user_id)
+            .join(QuestionnaireVersion, QuestionnaireVersion.id == Response.questionnaire_version_id)
+            .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+        )
+        if version_id:
+            response_stmt = response_stmt.where(Response.questionnaire_version_id == version_id)
+        if normalized_username:
+            response_stmt = response_stmt.where(User.username == normalized_username)
+        response_rows = db.execute(response_stmt.order_by(desc(Response.submitted_at)).limit(1000)).all()
+        if response_rows:
+            response_ids = [response.id for response, _, _ in response_rows]
+            response_count_rows = db.execute(
+                select(ResponseItem.response_id, func.count(ResponseItem.id))
+                .where(ResponseItem.response_id.in_(response_ids))
+                .group_by(ResponseItem.response_id)
+            ).all()
+            answer_count_by_response_id = {
+                response_id: int(answer_count)
+                for response_id, answer_count in response_count_rows
+            }
+            for response, user, version in response_rows:
+                summary_items.append(
+                    AdminResponseSummaryOut(
+                        response_id=_encode_admin_response_id(
+                            status=RESPONSE_STATUS_SUBMITTED,
+                            raw_id=response.id,
+                        ),
+                        response_status=RESPONSE_STATUS_SUBMITTED,
+                        questionnaire_id=questionnaire.id,
+                        questionnaire_version_id=version.id,
+                        questionnaire_version_number=version.version_number,
+                        username=user.username,
+                        user_role=user.role,
+                        recorded_at=response.submitted_at,
+                        submitted_at=response.submitted_at,
+                        saved_at=None,
+                        answer_count=answer_count_by_response_id.get(response.id, 0),
+                    )
+                )
+
+    if include_in_progress:
+        draft_stmt = (
+            select(ResponseDraft, User, QuestionnaireVersion)
+            .join(User, User.id == ResponseDraft.user_id)
+            .join(QuestionnaireVersion, QuestionnaireVersion.id == ResponseDraft.questionnaire_version_id)
+            .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+        )
+        if version_id:
+            draft_stmt = draft_stmt.where(ResponseDraft.questionnaire_version_id == version_id)
+        if normalized_username:
+            draft_stmt = draft_stmt.where(User.username == normalized_username)
+        draft_rows = db.execute(draft_stmt.order_by(desc(ResponseDraft.saved_at)).limit(1000)).all()
+        if draft_rows:
+            draft_ids = [draft.id for draft, _, _ in draft_rows]
+            draft_count_rows = db.execute(
+                select(ResponseDraftItem.response_draft_id, func.count(ResponseDraftItem.id))
+                .where(ResponseDraftItem.response_draft_id.in_(draft_ids))
+                .group_by(ResponseDraftItem.response_draft_id)
+            ).all()
+            answer_count_by_draft_id = {
+                draft_id: int(answer_count)
+                for draft_id, answer_count in draft_count_rows
+            }
+            for draft, user, version in draft_rows:
+                summary_items.append(
+                    AdminResponseSummaryOut(
+                        response_id=_encode_admin_response_id(
+                            status=RESPONSE_STATUS_IN_PROGRESS,
+                            raw_id=draft.id,
+                        ),
+                        response_status=RESPONSE_STATUS_IN_PROGRESS,
+                        questionnaire_id=questionnaire.id,
+                        questionnaire_version_id=version.id,
+                        questionnaire_version_number=version.version_number,
+                        username=user.username,
+                        user_role=user.role,
+                        recorded_at=draft.saved_at,
+                        submitted_at=None,
+                        saved_at=draft.saved_at,
+                        answer_count=answer_count_by_draft_id.get(draft.id, 0),
+                    )
+                )
+
+    summary_items.sort(key=lambda item: item.recorded_at, reverse=True)
+    return summary_items[:1000]
 
 
 @router.get("/{questionnaire_id}/responses/export.csv")
@@ -706,6 +791,7 @@ def export_questionnaire_responses_csv(
     current_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
     version_id: str | None = Query(default=None),
+    response_status: str = Query(default="all"),
 ) -> FastAPIResponse:
     questionnaire = _get_accessible_questionnaire(
         db, questionnaire_id=questionnaire_id, user=current_user
@@ -730,6 +816,15 @@ def export_questionnaire_responses_csv(
             detail="Questionnaire version not found",
         )
 
+    normalized_status = str(response_status or "all").strip().lower()
+    if normalized_status not in {"all", RESPONSE_STATUS_SUBMITTED, RESPONSE_STATUS_IN_PROGRESS}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="response_status must be one of: all, submitted, in_progress",
+        )
+    include_submitted = normalized_status in {"all", RESPONSE_STATUS_SUBMITTED}
+    include_in_progress = normalized_status in {"all", RESPONSE_STATUS_IN_PROGRESS}
+
     ordered_questions = db.execute(
         select(Question)
         .where(Question.questionnaire_version_id == selected_version.id)
@@ -750,19 +845,47 @@ def export_questionnaire_responses_csv(
             f"c{case_index_by_key[case_key]}q{case_question_count_by_key[case_key]}"
         )
 
-    item_rows = db.execute(
-        select(ResponseItem, Response, User, Question)
-        .join(Response, Response.id == ResponseItem.response_id)
-        .join(User, User.id == Response.user_id)
-        .join(Question, Question.id == ResponseItem.question_id)
-        .where(Response.questionnaire_version_id == selected_version.id)
-        .where(Question.questionnaire_version_id == selected_version.id)
-        .order_by(desc(Response.submitted_at), Response.id, Question.position)
-    ).all()
+    submitted_item_rows: list[tuple[ResponseItem, Response, User, Question]] = []
+    if include_submitted:
+        submitted_item_rows = db.execute(
+            select(ResponseItem, Response, User, Question)
+            .join(Response, Response.id == ResponseItem.response_id)
+            .join(User, User.id == Response.user_id)
+            .join(Question, Question.id == ResponseItem.question_id)
+            .where(Response.questionnaire_version_id == selected_version.id)
+            .where(Question.questionnaire_version_id == selected_version.id)
+            .order_by(desc(Response.submitted_at), Response.id, Question.position)
+        ).all()
+
+    draft_item_rows: list[tuple[ResponseDraftItem, ResponseDraft, User, Question]] = []
+    if include_in_progress:
+        draft_item_rows = db.execute(
+            select(ResponseDraftItem, ResponseDraft, User, Question)
+            .join(ResponseDraft, ResponseDraft.id == ResponseDraftItem.response_draft_id)
+            .join(User, User.id == ResponseDraft.user_id)
+            .join(Question, Question.id == ResponseDraftItem.question_id)
+            .where(ResponseDraft.questionnaire_version_id == selected_version.id)
+            .where(Question.questionnaire_version_id == selected_version.id)
+            .order_by(desc(ResponseDraft.saved_at), ResponseDraft.id, Question.position)
+        ).all()
 
     question_config_by_id: dict[str, dict] = {}
     stimulus_asset_ids: set[str] = set()
-    for _, _, _, question in item_rows:
+    for _, _, _, question in submitted_item_rows:
+        if question.id in question_config_by_id:
+            continue
+        config = _parse_json_object(question.config_json)
+        question_config_by_id[question.id] = config
+        raw_stimulus_ids = config.get("stimulus_asset_ids", [])
+        if not isinstance(raw_stimulus_ids, list):
+            continue
+        for raw_asset_id in raw_stimulus_ids:
+            if not isinstance(raw_asset_id, str):
+                continue
+            asset_id = raw_asset_id.strip()
+            if asset_id:
+                stimulus_asset_ids.add(asset_id)
+    for _, _, _, question in draft_item_rows:
         if question.id in question_config_by_id:
             continue
         config = _parse_json_object(question.config_json)
@@ -796,7 +919,10 @@ def export_questionnaire_responses_csv(
         "questionnaire_version_number",
         "username",
         "user_role",
+        "response_status",
+        "recorded_at",
         "submitted_at",
+        "saved_at",
         "case_key",
         "question_identifier",
         "case_image_filenames",
@@ -811,7 +937,45 @@ def export_questionnaire_responses_csv(
     writer = csv.DictWriter(buffer, fieldnames=fieldnames)
     writer.writeheader()
 
-    for item, response, user, question in item_rows:
+    csv_rows: list[dict[str, Any]] = []
+    for item, response, user, question in submitted_item_rows:
+        csv_rows.append(
+            {
+                "response_status": RESPONSE_STATUS_SUBMITTED,
+                "raw_response_id": response.id,
+                "recorded_at": response.submitted_at,
+                "submitted_at": response.submitted_at,
+                "saved_at": None,
+                "user": user,
+                "question": question,
+                "answer_json": item.answer_json,
+            }
+        )
+    for item, response_draft, user, question in draft_item_rows:
+        csv_rows.append(
+            {
+                "response_status": RESPONSE_STATUS_IN_PROGRESS,
+                "raw_response_id": response_draft.id,
+                "recorded_at": response_draft.saved_at,
+                "submitted_at": None,
+                "saved_at": response_draft.saved_at,
+                "user": user,
+                "question": question,
+                "answer_json": item.answer_json,
+            }
+        )
+
+    csv_rows.sort(
+        key=lambda row: (
+            -row["recorded_at"].timestamp(),
+            row["raw_response_id"],
+            int(row["question"].position),
+        )
+    )
+
+    for row in csv_rows:
+        question = row["question"]
+        user = row["user"]
         config = question_config_by_id.get(question.id) or _parse_json_object(question.config_json)
         case_key = str(config.get("case_key") or "").strip()
         raw_stimulus_ids = config.get("stimulus_asset_ids", [])
@@ -830,17 +994,28 @@ def export_questionnaire_responses_csv(
                 seen_case_filenames.add(filename)
                 case_filenames.append(filename)
 
-        parsed_value = _parse_json_any(item.answer_json)
+        parsed_value = _parse_json_any(row["answer_json"])
+        raw_response_id = row["raw_response_id"]
+        row_status = row["response_status"]
+        recorded_at = row["recorded_at"]
+        submitted_at = row["submitted_at"]
+        saved_at = row["saved_at"]
         writer.writerow(
             {
-                "response_id": response.id,
+                "response_id": _encode_admin_response_id(
+                    status=row_status,
+                    raw_id=raw_response_id,
+                ),
                 "questionnaire_id": questionnaire.id,
                 "questionnaire_title": questionnaire.title,
                 "questionnaire_version_id": selected_version.id,
                 "questionnaire_version_number": selected_version.version_number,
                 "username": user.username,
                 "user_role": user.role.value,
-                "submitted_at": response.submitted_at.isoformat(),
+                "response_status": row_status,
+                "recorded_at": recorded_at.isoformat(),
+                "submitted_at": submitted_at.isoformat() if submitted_at else "",
+                "saved_at": saved_at.isoformat() if saved_at else "",
                 "case_key": case_key,
                 "question_identifier": case_question_identifier_by_question_id.get(question.id, ""),
                 "case_image_filenames": " | ".join(case_filenames),
@@ -874,11 +1049,59 @@ def get_questionnaire_response_detail(
     questionnaire = _get_accessible_questionnaire(
         db, questionnaire_id=questionnaire_id, user=current_user
     )
+    decoded_status, decoded_id = _decode_admin_response_id(response_id)
+
+    if decoded_status == RESPONSE_STATUS_IN_PROGRESS:
+        response_row = db.execute(
+            select(ResponseDraft, User, QuestionnaireVersion)
+            .join(User, User.id == ResponseDraft.user_id)
+            .join(QuestionnaireVersion, QuestionnaireVersion.id == ResponseDraft.questionnaire_version_id)
+            .where(ResponseDraft.id == decoded_id)
+            .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
+        ).first()
+        if not response_row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Response not found")
+        response_draft, user, version = response_row
+
+        item_rows = db.execute(
+            select(ResponseDraftItem, Question)
+            .join(Question, Question.id == ResponseDraftItem.question_id)
+            .where(ResponseDraftItem.response_draft_id == response_draft.id)
+            .order_by(Question.position)
+        ).all()
+        items: list[AdminResponseItemOut] = [
+            AdminResponseItemOut(
+                question_id=question.id,
+                question_position=question.position,
+                question_prompt_text=question.prompt_text,
+                question_type=question.question_type,
+                answer_value=_parse_json_any(item.answer_json),
+            )
+            for item, question in item_rows
+        ]
+
+        return AdminResponseDetailOut(
+            response_id=_encode_admin_response_id(
+                status=RESPONSE_STATUS_IN_PROGRESS,
+                raw_id=response_draft.id,
+            ),
+            response_status=RESPONSE_STATUS_IN_PROGRESS,
+            questionnaire_id=questionnaire.id,
+            questionnaire_version_id=version.id,
+            questionnaire_version_number=version.version_number,
+            username=user.username,
+            user_role=user.role,
+            recorded_at=response_draft.saved_at,
+            submitted_at=None,
+            saved_at=response_draft.saved_at,
+            items=items,
+        )
+
     response_row = db.execute(
         select(Response, User, QuestionnaireVersion)
         .join(User, User.id == Response.user_id)
         .join(QuestionnaireVersion, QuestionnaireVersion.id == Response.questionnaire_version_id)
-        .where(Response.id == response_id)
+        .where(Response.id == decoded_id)
         .where(QuestionnaireVersion.questionnaire_id == questionnaire.id)
     ).first()
     if not response_row:
@@ -891,7 +1114,7 @@ def get_questionnaire_response_detail(
         .where(ResponseItem.response_id == response.id)
         .order_by(Question.position)
     ).all()
-    items: list[AdminResponseItemOut] = [
+    items = [
         AdminResponseItemOut(
             question_id=question.id,
             question_position=question.position,
@@ -903,13 +1126,19 @@ def get_questionnaire_response_detail(
     ]
 
     return AdminResponseDetailOut(
-        response_id=response.id,
+        response_id=_encode_admin_response_id(
+            status=RESPONSE_STATUS_SUBMITTED,
+            raw_id=response.id,
+        ),
+        response_status=RESPONSE_STATUS_SUBMITTED,
         questionnaire_id=questionnaire.id,
         questionnaire_version_id=version.id,
         questionnaire_version_number=version.version_number,
         username=user.username,
         user_role=user.role,
+        recorded_at=response.submitted_at,
         submitted_at=response.submitted_at,
+        saved_at=None,
         items=items,
     )
 
@@ -973,6 +1202,17 @@ def delete_questionnaire(
         if response_ids:
             db.execute(delete(ResponseItem).where(ResponseItem.response_id.in_(response_ids)))
         db.execute(delete(Response).where(Response.questionnaire_version_id.in_(version_ids)))
+
+        response_draft_ids = (
+            db.execute(
+                select(ResponseDraft.id).where(ResponseDraft.questionnaire_version_id.in_(version_ids))
+            )
+            .scalars()
+            .all()
+        )
+        if response_draft_ids:
+            db.execute(delete(ResponseDraftItem).where(ResponseDraftItem.response_draft_id.in_(response_draft_ids)))
+        db.execute(delete(ResponseDraft).where(ResponseDraft.questionnaire_version_id.in_(version_ids)))
 
         question_ids = (
             db.execute(

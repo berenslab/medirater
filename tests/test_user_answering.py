@@ -34,6 +34,21 @@ def _signup(client: TestClient, username: str, token: str | None = None) -> dict
     return complete.json()
 
 
+def _login(client: TestClient, username: str) -> dict:
+    begin = client.post("/api/auth/login/begin", json={"username": username})
+    assert begin.status_code == 200
+
+    complete = client.post(
+        "/api/auth/login/complete",
+        json={
+            "challenge_id": begin.json()["challenge_id"],
+            "credential": {"id": f"cred-{username}-1"},
+        },
+    )
+    assert complete.status_code == 200
+    return complete.json()
+
+
 def _bootstrap_superadmin_token(test_session_factory) -> str:
     settings = get_settings()
     with test_session_factory() as db:
@@ -153,6 +168,12 @@ def test_user_can_open_assigned_questionnaire_and_submit_response(test_session_f
         )
         assert missing_required.status_code == 403
 
+        draft_before_consent = user_client.post(
+            f"/api/user/questionnaires/{version_id}/draft",
+            json={"answers": [{"question_id": question_id, "value": "a"}]},
+        )
+        assert draft_before_consent.status_code == 403
+
         consent_submit = user_client.post(
             f"/api/user/questionnaires/{version_id}/consent",
             json={"consented": True},
@@ -168,6 +189,31 @@ def test_user_can_open_assigned_questionnaire_and_submit_response(test_session_f
             json={"answers": []},
         )
         assert missing_required_after_consent.status_code == 400
+
+        draft_saved = user_client.post(
+            f"/api/user/questionnaires/{version_id}/draft",
+            json={
+                "answers": [
+                    {
+                        "question_id": question_id,
+                        "value": "a",
+                    }
+                ]
+            },
+        )
+        assert draft_saved.status_code == 200
+        assert draft_saved.json()["answer_count"] == 1
+
+        detail_with_draft = user_client.get(f"/api/user/questionnaires/{version_id}")
+        assert detail_with_draft.status_code == 200
+        existing_answers_before_submit = detail_with_draft.json()["existing_answers"]
+        assert len(existing_answers_before_submit) == 1
+        assert existing_answers_before_submit[0]["question_id"] == question_id
+        assert existing_answers_before_submit[0]["value"] == "a"
+
+        assigned_mid = user_client.get("/api/user/assigned-questionnaires")
+        assert assigned_mid.status_code == 200
+        assert assigned_mid.json()[0]["submitted_at"] is None
 
         submitted = user_client.post(
             f"/api/user/questionnaires/{version_id}/responses",
@@ -199,6 +245,82 @@ def test_user_can_open_assigned_questionnaire_and_submit_response(test_session_f
         assert asset_content.status_code == 200
         assert asset_content.headers["content-type"].startswith("image/png")
         assert asset_content.content == PNG_BYTES
+
+
+def test_server_saved_draft_survives_new_session(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+
+        created = super_client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Draft persistence questionnaire",
+                "description": "Draft persistence check",
+                "instructions_markdown": "Type your notes.",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+        assert version_id
+
+        question = super_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+            json={
+                "position": 1,
+                "prompt_text": "Notes",
+                "question_type": "short_text",
+                "is_required": True,
+                "config": {},
+                "choices": [],
+            },
+        )
+        assert question.status_code == 200
+        question_id = question.json()["id"]
+
+        published = super_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+        )
+        assert published.status_code == 200
+
+        user_token = super_client.post(
+            "/api/admin/signup-tokens",
+            json={
+                "role": "user",
+                "expires_in_minutes": 60,
+                "questionnaire_version_ids": [version_id],
+            },
+        )
+        assert user_token.status_code == 200
+
+    with TestClient(app) as first_user_client:
+        _signup(first_user_client, "alice", token=user_token.json()["token"])
+        _complete_profile(first_user_client, "alice", yoe=4)
+
+        consent_submit = first_user_client.post(
+            f"/api/user/questionnaires/{version_id}/consent",
+            json={"consented": True},
+        )
+        assert consent_submit.status_code == 200
+
+        saved_draft = first_user_client.post(
+            f"/api/user/questionnaires/{version_id}/draft",
+            json={"answers": [{"question_id": question_id, "value": "draft-from-session-one"}]},
+        )
+        assert saved_draft.status_code == 200
+        assert saved_draft.json()["answer_count"] == 1
+
+    with TestClient(app) as second_user_client:
+        _login(second_user_client, "alice")
+
+        detail = second_user_client.get(f"/api/user/questionnaires/{version_id}")
+        assert detail.status_code == 200
+        existing_answers = detail.json()["existing_answers"]
+        assert len(existing_answers) == 1
+        assert existing_answers[0]["question_id"] == question_id
+        assert existing_answers[0]["value"] == "draft-from-session-one"
 
 
 def test_user_receives_custom_questionnaire_consent_text(test_session_factory) -> None:

@@ -312,6 +312,12 @@
       currentCaseIndex: 0,
       stimulusHideTimerId: null,
     };
+    const draftSyncState = {
+      timerId: null,
+      inFlightPromise: null,
+      saveAfterInFlight: false,
+      disabled: false,
+    };
 
     function setStatus(message, ok) {
       const el = document.getElementById("status");
@@ -682,6 +688,66 @@
       localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
     }
 
+    async function syncDraftToServer() {
+      if (draftSyncState.disabled) {
+        return;
+      }
+      if (draftSyncState.inFlightPromise) {
+        draftSyncState.saveAfterInFlight = true;
+        return draftSyncState.inFlightPromise;
+      }
+
+      const answers = buildSubmitAnswers();
+      const promise = requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      }).catch((error) => {
+        setStatus(`Auto-save failed: ${error.message || String(error)}`, false);
+        throw error;
+      });
+
+      draftSyncState.inFlightPromise = promise;
+      promise.finally(() => {
+        draftSyncState.inFlightPromise = null;
+        if (draftSyncState.saveAfterInFlight && !draftSyncState.disabled) {
+          draftSyncState.saveAfterInFlight = false;
+          void syncDraftToServer().catch(() => {});
+          return;
+        }
+        draftSyncState.saveAfterInFlight = false;
+      });
+      return promise;
+    }
+
+    function queueDraftSync(delayMs = 700) {
+      if (draftSyncState.disabled) {
+        return;
+      }
+      if (draftSyncState.timerId !== null) {
+        window.clearTimeout(draftSyncState.timerId);
+      }
+      const safeDelay = Number.isFinite(delayMs) ? Math.max(0, delayMs) : 0;
+      draftSyncState.timerId = window.setTimeout(() => {
+        draftSyncState.timerId = null;
+        void syncDraftToServer().catch(() => {});
+      }, safeDelay);
+    }
+
+    async function settleDraftSyncBeforeSubmit() {
+      if (draftSyncState.timerId !== null) {
+        window.clearTimeout(draftSyncState.timerId);
+        draftSyncState.timerId = null;
+      }
+      draftSyncState.saveAfterInFlight = false;
+      if (draftSyncState.inFlightPromise) {
+        try {
+          await draftSyncState.inFlightPromise;
+        } catch (_error) {
+        }
+      }
+    }
+
     function clampNumber(value, min, max, fallback) {
       if (!Number.isFinite(value)) {
         return fallback;
@@ -837,6 +903,7 @@
         state.answersByQuestionId.set(question.id, value);
       }
       persistDraftToStorage();
+      queueDraftSync();
     }
 
     function validateAllRequiredAnswers() {
@@ -1308,6 +1375,9 @@
       for (const [questionId, value] of draftAnswers.entries()) {
         state.answersByQuestionId.set(questionId, value);
       }
+      if (draftAnswers.size) {
+        queueDraftSync(250);
+      }
 
       const caseIndexFromUrl = getCaseIndexFromUrl(state.caseGroups.length);
       if (caseIndexFromUrl !== null) {
@@ -1324,13 +1394,21 @@
     async function submitQuestionnaire() {
       saveCurrentCaseAnswers({ enforceRequired: true });
       validateAllRequiredAnswers();
+      draftSyncState.disabled = true;
+      await settleDraftSyncBeforeSubmit();
 
       const answers = buildSubmitAnswers();
-      const submitted = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/responses`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers }),
-      });
+      let submitted;
+      try {
+        submitted = await requestJson(`/api/user/questionnaires/${QUESTIONNAIRE_VERSION_ID}/responses`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answers }),
+        });
+      } catch (error) {
+        draftSyncState.disabled = false;
+        throw error;
+      }
 
       localStorage.removeItem(DRAFT_STORAGE_KEY);
       setStatus(`Submitted at ${submitted.submitted_at}. Redirecting...`, true);
@@ -1339,9 +1417,24 @@
       }, 500);
     }
 
-    document.getElementById("prev-btn").addEventListener("click", () => {
+    document.getElementById("question-root").addEventListener("input", () => {
       try {
         saveCurrentCaseAnswers({ enforceRequired: false });
+      } catch (_error) {
+      }
+    });
+
+    document.getElementById("question-root").addEventListener("change", () => {
+      try {
+        saveCurrentCaseAnswers({ enforceRequired: false });
+      } catch (_error) {
+      }
+    });
+
+    document.getElementById("prev-btn").addEventListener("click", async () => {
+      try {
+        saveCurrentCaseAnswers({ enforceRequired: false });
+        await syncDraftToServer();
         if (state.currentCaseIndex > 0) {
           moveToCaseIndex(state.currentCaseIndex - 1);
         }
@@ -1364,6 +1457,7 @@
         }
 
         saveCurrentCaseAnswers({ enforceRequired: true });
+        await syncDraftToServer();
         moveToCaseIndex(state.currentCaseIndex + 1);
       } catch (error) {
         setStatus(error.message || String(error), false);
