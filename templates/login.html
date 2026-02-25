@@ -105,10 +105,47 @@
   </div>
 
   <script>
+    const PASSKEY_INVALID_DOMAIN_MESSAGE = "Passkeys require localhost or an HTTPS domain name, not a raw IP address.";
+
     function setStatus(message, ok) {
       const status = document.getElementById("status");
       status.className = ok ? "status ok" : "status err";
       status.textContent = message;
+    }
+
+    function isIpHostname(hostname) {
+      const host = String(hostname || "").replace(/^\[|\]$/g, "");
+      const ipv4Pattern = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+      return ipv4Pattern.test(host) || host.includes(":");
+    }
+
+    function getPasskeyUnavailableMessage() {
+      if (window.PublicKeyCredential && navigator.credentials) {
+        return "";
+      }
+      if (isIpHostname(window.location.hostname)) {
+        return PASSKEY_INVALID_DOMAIN_MESSAGE;
+      }
+      if (!window.isSecureContext) {
+        return "Passkeys require a secure context (HTTPS), except on localhost.";
+      }
+      return "Passkeys are not supported in this browser.";
+    }
+
+    function isDomainValidityPasskeyError(error) {
+      const message = String((error && error.message) || error || "").toLowerCase();
+      if (!message) return false;
+      return (
+        message.includes("effective domain of the document is not a valid domain")
+        || message.includes("relying party id is not a registrable domain suffix")
+      );
+    }
+
+    function normalizePasskeyError(error) {
+      if (isIpHostname(window.location.hostname) && isDomainValidityPasskeyError(error)) {
+        return PASSKEY_INVALID_DOMAIN_MESSAGE;
+      }
+      return (error && error.message) || String(error);
     }
 
     function base64urlToUint8Array(base64url) {
@@ -181,8 +218,9 @@
 
       const username = document.getElementById("username").value.trim();
 
-      if (!window.PublicKeyCredential || !navigator.credentials) {
-        setStatus("Passkeys are not supported in this browser.", false);
+      const unavailableMessage = getPasskeyUnavailableMessage();
+      if (unavailableMessage) {
+        setStatus(unavailableMessage, false);
         submitButton.disabled = false;
         return;
       }
@@ -209,7 +247,7 @@
         setStatus("Login successful. Redirecting...", true);
         window.setTimeout(() => { window.location.href = "/"; }, 400);
       } catch (error) {
-        setStatus(error.message || String(error), false);
+        setStatus(normalizePasskeyError(error), false);
       } finally {
         submitButton.disabled = false;
       }

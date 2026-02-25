@@ -261,6 +261,8 @@
   </main>
 
   <script>
+    const PASSKEY_INVALID_DOMAIN_MESSAGE = "Passkeys require localhost or an HTTPS domain name, not a raw IP address.";
+
     const state = {
       me: null,
     };
@@ -276,6 +278,41 @@
       if (accountLink && username) {
         accountLink.textContent = `Account (${username})`;
       }
+    }
+
+    function isIpHostname(hostname) {
+      const host = String(hostname || "").replace(/^\[|\]$/g, "");
+      const ipv4Pattern = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+      return ipv4Pattern.test(host) || host.includes(":");
+    }
+
+    function getPasskeyUnavailableMessage() {
+      if (window.PublicKeyCredential && navigator.credentials) {
+        return "";
+      }
+      if (isIpHostname(window.location.hostname)) {
+        return PASSKEY_INVALID_DOMAIN_MESSAGE;
+      }
+      if (!window.isSecureContext) {
+        return "Passkeys require a secure context (HTTPS), except on localhost.";
+      }
+      return "Passkeys are not supported in this browser.";
+    }
+
+    function isDomainValidityPasskeyError(error) {
+      const message = String((error && error.message) || error || "").toLowerCase();
+      if (!message) return false;
+      return (
+        message.includes("effective domain of the document is not a valid domain")
+        || message.includes("relying party id is not a registrable domain suffix")
+      );
+    }
+
+    function normalizePasskeyError(error) {
+      if (isIpHostname(window.location.hostname) && isDomainValidityPasskeyError(error)) {
+        return PASSKEY_INVALID_DOMAIN_MESSAGE;
+      }
+      return (error && error.message) || String(error);
     }
 
     function base64urlToUint8Array(base64url) {
@@ -500,8 +537,9 @@
 
     document.getElementById("add-passkey-btn").addEventListener("click", async () => {
       try {
-        if (!window.PublicKeyCredential || !navigator.credentials) {
-          throw new Error("Passkeys are not supported in this browser.");
+        const unavailableMessage = getPasskeyUnavailableMessage();
+        if (unavailableMessage) {
+          throw new Error(unavailableMessage);
         }
 
         const begin = await requestJson("/api/passkeys/begin-add", {
@@ -538,7 +576,7 @@
         setStatus("passkey-status", "Passkey added.", true);
         await loadPasskeys();
       } catch (error) {
-        setStatus("passkey-status", error.message || String(error), false);
+        setStatus("passkey-status", normalizePasskeyError(error), false);
       }
     });
 
