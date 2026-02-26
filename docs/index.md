@@ -6,6 +6,7 @@
 
 - [Install and run locally](install.md)
 - [Deployment guide](deployment.md)
+- [Raspberry Pi deployment guide](pi_deployment.md)
 - [API overview](api.md)
 - [Recipe extension guide](recipes.md)
 - [Bulk recipe preview/apply payload notes](bulk_recipe_spec.md)

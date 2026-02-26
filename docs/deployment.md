@@ -2,6 +2,10 @@
 
 This app can run on any Linux VM/container that supports Python 3.12+.
 
+For a full Raspberry Pi production runbook (packages, systemd, caddy, DNS, firewall, verification), see:
+
+- [Raspberry Pi deployment guide](pi_deployment.md)
+
 ## Production requirements
 
 - HTTPS domain (required for WebAuthn/passkeys)
