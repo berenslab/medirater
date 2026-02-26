@@ -267,6 +267,33 @@ sudo ufw --force enable
 sudo ufw status verbose
 ```
 
+Optional egress lockdown (recommended if you want to reduce abuse risk from a compromised Pi):
+
+```bash
+sudo ufw default deny outgoing
+sudo ufw allow out 53/udp
+sudo ufw allow out 53/tcp
+sudo ufw allow out 80/tcp
+sudo ufw allow out 443/tcp
+sudo ufw allow out 123/udp
+sudo ufw reload
+sudo ufw status verbose
+```
+
+What these outbound rules cover:
+
+- `53/tcp` + `53/udp`: DNS lookups
+- `80/tcp` + `443/tcp`: package downloads, git over HTTPS, certificate operations
+- `123/udp`: clock sync (recommended for TLS reliability)
+
+Quick validation after enabling outbound deny:
+
+```bash
+dig +short example.com @1.1.1.1
+curl -I https://<APP_DOMAIN>/health
+sudo apt update
+```
+
 ## 12) Final verification checklist
 
 Check service states:
