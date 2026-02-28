@@ -20,6 +20,9 @@
 - `GET /me`
 - `PATCH /me`
 
+Notes:
+- `POST /signup/begin` + `POST /signup/complete` also support passkey recovery for an existing username when a valid signup token is provided for that user's role. The user record is reused and existing data is preserved.
+
 ## Passkeys (`/api/passkeys`)
 
 - `GET /api/passkeys`

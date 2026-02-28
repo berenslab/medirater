@@ -207,7 +207,7 @@
 
       <article class="card" id="invite-card" style="display:none;">
         <h2>Signup tokens and questionnaire visibility</h2>
-        <p>Create invite tokens and set questionnaire visibility for new accounts.</p>
+        <p>Create invite tokens and optionally set questionnaire visibility for new accounts.</p>
 
         <div class="row">
           <div style="flex:1;min-width:180px;">
@@ -420,7 +420,7 @@
       }
       if (role === "user") {
         document.getElementById("token-scope-hint").textContent =
-          "Select one or more questionnaires for this user token.";
+          "Optional: select questionnaires this user should immediately access.";
       } else if (role === "admin") {
         document.getElementById("token-scope-hint").textContent =
           "Optional: select questionnaires this admin should immediately access.";
@@ -538,10 +538,6 @@
         const role = document.getElementById("token-role").value;
         const expires = Number(document.getElementById("token-expiry").value || 60);
         const scope = role === "superadmin" ? [] : getSelectedScopeVersionIds();
-
-        if (role === "user" && scope.length === 0) {
-          throw new Error("User tokens require at least one selected questionnaire.");
-        }
 
         const created = await requestJson("/api/admin/signup-tokens", {
           method: "POST",

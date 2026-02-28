@@ -187,6 +187,11 @@ def signup_page(
             "title": "Signup",
             "heading": "Signup",
             "token_required": False,
+            "token_note": (
+                "In invite-only mode, use a one-time token. "
+                "If you already have an account but lost passkey access, use a fresh token "
+                "with your existing username to add a new passkey."
+            ),
             "mode_aware": True,
             "links": [{"href": "/login", "label": "Back to login"}],
         },

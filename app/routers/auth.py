@@ -48,6 +48,16 @@ from app.services.webauthn import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _validate_signup_recovery_token_for_user(*, token_record: SignupToken, user: User) -> None:
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+    if token_record.role_to_grant != user.role:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Signup token role does not match existing user role",
+        )
+
+
 @router.get("/public-signup-mode", response_model=SignupModeResponse)
 def public_signup_mode(db: Session = Depends(get_db)) -> SignupModeResponse:
     return SignupModeResponse(mode=get_public_signup_mode(db))
@@ -66,25 +76,39 @@ def signup_begin(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     existing_user = db.scalar(select(User).where(User.username == username))
-    if existing_user:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already taken")
 
     token_record: SignupToken | None = None
     if payload.token:
         token_record = get_valid_signup_token(db, token=payload.token, token_pepper=settings.token_pepper)
         if not token_record:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired signup token")
+    elif existing_user:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already taken")
     else:
         mode = get_public_signup_mode(db)
         if mode == SignupMode.INVITE_ONLY:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Signup token is required")
+
+    recovering_existing_user = bool(existing_user and token_record)
+    exclude_credential_ids: list[str] = []
+    webauthn_user_id = username
+    if recovering_existing_user and existing_user and token_record:
+        _validate_signup_recovery_token_for_user(token_record=token_record, user=existing_user)
+        exclude_credential_ids = [
+            row[0]
+            for row in db.execute(
+                select(PasskeyCredential.credential_id).where(PasskeyCredential.user_id == existing_user.id)
+            ).all()
+        ]
+        webauthn_user_id = existing_user.id
 
     try:
         public_key_options, challenge = generate_registration_public_key_options(
             rp_id=settings.webauthn_rp_id,
             rp_name=settings.webauthn_rp_name,
             username=username,
-            user_id=username,
+            user_id=webauthn_user_id,
+            exclude_credential_ids=exclude_credential_ids,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
@@ -93,6 +117,7 @@ def signup_begin(
         flow="signup",
         challenge=challenge,
         username=username,
+        user_id=existing_user.id if recovering_existing_user and existing_user else None,
         token_id=token_record.id if token_record else None,
         expires_at=utcnow() + timedelta(minutes=settings.challenge_ttl_minutes),
     )
@@ -137,22 +162,67 @@ def signup_complete(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    existing_user = db.scalar(select(User).where(User.username == pending.username))
-    if existing_user:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already taken")
-
     existing_credential = db.scalar(
         select(PasskeyCredential).where(PasskeyCredential.credential_id == registration.credential_id)
     )
     if existing_credential:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Credential already registered")
 
-    role = Role.USER
     token_record: SignupToken | None = None
     if pending.token_id:
         token_record = db.get(SignupToken, pending.token_id)
         if not token_record or token_record.used_at is not None or token_record.expires_at <= utcnow():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Signup token no longer valid")
+
+    if pending.user_id:
+        if not token_record:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Signup token is required")
+
+        user = db.get(User, pending.user_id)
+        if not user or user.username != pending.username:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User no longer matches challenge")
+
+        _validate_signup_recovery_token_for_user(token_record=token_record, user=user)
+        db.add(
+            PasskeyCredential(
+                user_id=user.id,
+                credential_id=registration.credential_id,
+                public_key=registration.public_key,
+                sign_count=registration.sign_count,
+                label="Recovered passkey",
+            )
+        )
+        consume_signup_token(token_record, used_by_id=user.id)
+
+        session_token = create_session(db, user_id=user.id, ttl_hours=settings.session_ttl_hours)
+        db.delete(pending)
+
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Passkey recovery failed due to concurrent update",
+            ) from exc
+
+        response.set_cookie(
+            key=settings.session_cookie_name,
+            value=session_token.id,
+            httponly=True,
+            secure=settings.session_cookie_secure,
+            samesite=settings.session_cookie_samesite,
+            domain=settings.session_cookie_domain,
+        )
+
+        return AuthSessionResponse(user=UserOut.model_validate(user), session_expires_at=session_token.expires_at)
+
+    existing_user = db.scalar(select(User).where(User.username == pending.username))
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already taken")
+
+    role = Role.USER
+    if token_record:
         role = token_record.role_to_grant
     else:
         mode = get_public_signup_mode(db)

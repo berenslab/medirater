@@ -100,7 +100,7 @@
         <input id="token" name="token" {% if token_required %}required{% endif %} />
       </div>
 
-      <button id="submit-btn" type="submit">Create account</button>
+      <button id="submit-btn" type="submit">Create account or recover access</button>
     </form>
     <div id="status" class="status"></div>
     {% if links %}
@@ -296,7 +296,7 @@
           credential: serializeRegistrationCredential(credential),
         });
 
-        setStatus("Signup successful. Redirecting...", true);
+        setStatus("Passkey setup successful. Redirecting...", true);
         window.setTimeout(() => { window.location.href = "/"; }, 500);
       } catch (error) {
         setStatus(normalizePasskeyError(error), false);

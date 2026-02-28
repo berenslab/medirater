@@ -147,12 +147,6 @@ def create_signup_token(
             detail="Admins can only create user signup tokens",
         )
 
-    if payload.role == Role.USER and not normalized_scope:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User signup tokens must include questionnaire visibility scope",
-        )
-
     if payload.role == Role.SUPERADMIN and normalized_scope:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

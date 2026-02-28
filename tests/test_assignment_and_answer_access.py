@@ -118,7 +118,8 @@ def test_assignment_permissions_and_answer_access(test_session_factory) -> None:
                 "questionnaire_version_ids": [],
             },
         )
-        assert user_token.status_code == 400
+        assert user_token.status_code == 200
+        assert user_token.json()["questionnaire_version_ids"] == []
 
         # Create open user and later assign directly.
 
