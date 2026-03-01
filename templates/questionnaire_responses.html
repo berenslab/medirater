@@ -235,14 +235,23 @@
       return data;
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
     function formatAnswer(value) {
       if (value === null || value === undefined) return "-";
-      if (typeof value === "string") return value;
-      if (Array.isArray(value)) return value.join(", ");
+      if (typeof value === "string") return escapeHtml(value);
+      if (Array.isArray(value)) return escapeHtml(value.join(", "));
       try {
-        return JSON.stringify(value);
+        return escapeHtml(JSON.stringify(value));
       } catch (_error) {
-        return String(value);
+        return escapeHtml(String(value));
       }
     }
 
@@ -291,13 +300,13 @@
       for (const item of state.responses) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${item.username}</td>
-          <td>${item.user_role}</td>
-          <td>v${item.questionnaire_version_number}</td>
+          <td>${escapeHtml(item.username)}</td>
+          <td>${escapeHtml(item.user_role)}</td>
+          <td>v${escapeHtml(item.questionnaire_version_number)}</td>
           <td>${formatResponseStatus(item.response_status)}</td>
-          <td>${item.recorded_at}</td>
+          <td>${escapeHtml(item.recorded_at)}</td>
           <td>${item.answer_count}</td>
-          <td><button type="button" data-open-response-id="${item.response_id}">Open</button></td>
+          <td><button type="button" data-open-response-id="${escapeHtml(item.response_id)}">Open</button></td>
         `;
         tbody.appendChild(tr);
       }
@@ -314,8 +323,8 @@
       const statusText = formatResponseStatus(detail.response_status);
       const recordedAt = detail.recorded_at || detail.submitted_at || detail.saved_at || "-";
       document.getElementById("detail-meta").innerHTML = `
-        ${detail.username} (${detail.user_role}) ${statusText.toLowerCase()} at ${recordedAt} on v${detail.questionnaire_version_number}
-        <div class="mono">response ${detail.response_id}</div>
+        ${escapeHtml(detail.username)} (${escapeHtml(detail.user_role)}) ${statusText.toLowerCase()} at ${escapeHtml(recordedAt)} on v${escapeHtml(detail.questionnaire_version_number)}
+        <div class="mono">response ${escapeHtml(detail.response_id)}</div>
       `;
 
       const tbody = document.getElementById("detail-tbody");
@@ -332,7 +341,7 @@
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${item.question_position}</td>
-          <td>${item.question_prompt_text}</td>
+          <td>${escapeHtml(item.question_prompt_text)}</td>
           <td>${formatAnswer(item.answer_value)}</td>
         `;
         tbody.appendChild(tr);
