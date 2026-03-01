@@ -1151,7 +1151,7 @@
       const wrapper = document.createElement("section");
       wrapper.className = "card";
       wrapper.style.margin = "8px 0 0";
-      wrapper.innerHTML = `<h2>${question.prompt_text}${question.is_required ? ' <span class="required">*</span>' : ''}</h2>`;
+      wrapper.innerHTML = `<h2>${sanitizeHtml(question.prompt_text)}${question.is_required ? ' <span class="required">*</span>' : ''}</h2>`;
 
       const existing = state.answersByQuestionId.get(question.id);
 

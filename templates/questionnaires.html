@@ -283,6 +283,75 @@
       return data;
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function isSafeUrl(value) {
+      const url = String(value || "").trim();
+      if (!url) return false;
+      if (url.startsWith("/") || url.startsWith("#")) return true;
+      if (/^https?:\/\//i.test(url)) return true;
+      if (/^mailto:/i.test(url)) return true;
+      if (/^data:image\//i.test(url)) return true;
+      return false;
+    }
+
+    function sanitizeHtml(html) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${String(html || "")}</div>`, "text/html");
+      const root = doc.body.firstElementChild;
+      if (!root) return "";
+
+      const allowedTags = new Set([
+        "a", "b", "blockquote", "br", "code", "em",
+        "h1", "h2", "h3", "h4", "h5", "h6", "hr",
+        "i", "img", "li", "ol", "p", "pre", "strong", "ul",
+      ]);
+      const blockedTags = new Set(["script", "style", "iframe", "object", "embed", "svg", "math"]);
+
+      function sanitizeNode(node) {
+        for (const child of Array.from(node.childNodes)) {
+          if (child.nodeType === Node.COMMENT_NODE) { child.remove(); continue; }
+          if (child.nodeType !== Node.ELEMENT_NODE) continue;
+          const el = child;
+          const tag = el.tagName.toLowerCase();
+          if (blockedTags.has(tag)) { el.remove(); continue; }
+          if (!allowedTags.has(tag)) {
+            const fragment = doc.createDocumentFragment();
+            while (el.firstChild) fragment.appendChild(el.firstChild);
+            el.replaceWith(fragment);
+            sanitizeNode(node);
+            continue;
+          }
+          for (const attr of Array.from(el.attributes)) {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith("on") || name === "style") { el.removeAttribute(attr.name); continue; }
+            if (tag === "a" && (name === "href" || name === "target" || name === "rel")) continue;
+            if (tag === "img" && (name === "src" || name === "alt" || name === "title")) continue;
+            el.removeAttribute(attr.name);
+          }
+          if (tag === "a") {
+            if (!isSafeUrl(el.getAttribute("href"))) el.removeAttribute("href");
+            el.setAttribute("target", "_blank");
+            el.setAttribute("rel", "noopener noreferrer");
+          }
+          if (tag === "img") {
+            if (!isSafeUrl(el.getAttribute("src"))) { el.remove(); continue; }
+          }
+          sanitizeNode(el);
+        }
+      }
+
+      sanitizeNode(root);
+      return root.innerHTML;
+    }
+
     function renderRows(items) {
       const tbody = document.getElementById("tbody");
       tbody.innerHTML = "";
@@ -302,11 +371,11 @@
         const answerLink = item.latest_version_status === "published" && item.latest_version_id
           ? ` | <a href="/answer/${item.latest_version_id}/consent">Answer</a>`
           : "";
-        const description = item.description ? `<div class="subtext">${item.description}</div>` : "";
+        const description = item.description ? `<div class="subtext">${sanitizeHtml(item.description)}</div>` : "";
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${item.title}${description}</td>
-          <td>${item.owner_admin_username}</td>
+          <td>${sanitizeHtml(item.title)}${description}</td>
+          <td>${escapeHtml(item.owner_admin_username)}</td>
           <td>${latest}</td>
           <td><a href="/questionnaires/${item.id}/design">Design</a>${assignmentsLink}${responsesLink}${answerLink} | <a href="#" class="danger-link" data-delete-questionnaire-id="${item.id}">Delete</a></td>
         `;

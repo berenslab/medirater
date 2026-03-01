@@ -1122,7 +1122,7 @@
       block.className = "question-block";
 
       if (question.question_type !== "annotation") {
-        block.innerHTML = `<h2>${escapeHtml(question.prompt_text)}${question.is_required ? ' <span class="required">*</span>' : ""}</h2>`;
+        block.innerHTML = `<h2>${sanitizeHtml(question.prompt_text)}${question.is_required ? ' <span class="required">*</span>' : ""}</h2>`;
         const message = document.createElement("p");
         message.className = "muted";
         message.textContent = "This recipe expects annotation questions only.";
