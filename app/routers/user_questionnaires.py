@@ -44,6 +44,26 @@ from app.services.consent_service import resolve_effective_consent_text
 
 router = APIRouter(prefix="/api/user", tags=["user_questionnaires"])
 
+_SAFE_INLINE_TYPES = frozenset(
+    {
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+        "image/tiff",
+        "application/pdf",
+    }
+)
+
+
+def _safe_media_type(mime_type: str | None, file_name: str) -> tuple[str, str]:
+    """Return (media_type, content_disposition) that is safe for inline serving."""
+    safe_name = file_name.replace('"', "_") if file_name else "download"
+    if mime_type and mime_type.lower() in _SAFE_INLINE_TYPES:
+        return mime_type, f'inline; filename="{safe_name}"'
+    return "application/octet-stream", f'attachment; filename="{safe_name}"'
+
 
 def _parse_json_object(value: str) -> dict:
     try:
@@ -732,4 +752,9 @@ def get_assigned_questionnaire_asset_content(
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
-    return FastAPIResponse(content=asset.blob_data, media_type=asset.mime_type)
+    media_type, disposition = _safe_media_type(asset.mime_type, asset.file_name)
+    return FastAPIResponse(
+        content=asset.blob_data,
+        media_type=media_type,
+        headers={"Content-Disposition": disposition},
+    )
