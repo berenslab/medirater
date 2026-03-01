@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     token_pepper: str = "change-me-before-production"
     session_cookie_name: str = "session_token"
     session_ttl_hours: int = 24 * 14
-    session_cookie_secure: bool = False
+    session_cookie_secure: bool = True
     session_cookie_samesite: str = "lax"
     session_cookie_domain: str | None = None
     challenge_ttl_minutes: int = 10

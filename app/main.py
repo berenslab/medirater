@@ -52,6 +52,12 @@ async def lifespan(_: FastAPI):
             "WebAuthn cryptographic verification is completely disabled. "
             "This MUST be turned off in production."
         )
+    if not settings.session_cookie_secure:
+        logger.warning(
+            "SECURITY WARNING: APP_SESSION_COOKIE_SECURE is false. "
+            "Session cookies will be sent over plain HTTP. "
+            "Set APP_SESSION_COOKIE_SECURE=true when using HTTPS."
+        )
     Base.metadata.create_all(bind=engine)
     ensure_runtime_schema(engine)
     db = SessionLocal()
