@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="google" content="notranslate" />
+  <meta http-equiv="Content-Language" content="en" />
+  <title>medirater</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --panel: #ffffff;
+      --text: #1a2330;
+      --muted: #56657a;
+      --accent: #0a6c7e;
+      --border: #d7e1ea;
+      --ok: #1f7a45;
+      --err: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20px;
+    }
+    .container {
+      max-width: 820px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 1.2rem; }
+    h2 { margin: 0 0 8px; font-size: 1.05rem; }
+    h3 { margin: 14px 0 6px; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    nav { display: flex; gap: 10px; }
+    nav a { color: var(--accent); text-decoration: none; font-size: 0.92rem; }
+    .meta { color: var(--muted); font-size: 0.9rem; }
+    .content { padding: 16px 18px; }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fcfdff;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .report-text {
+      white-space: pre-wrap;
+      line-height: 1.55;
+      font-size: 0.97rem;
+      margin: 0;
+      padding: 12px 14px;
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    fieldset {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 10px 0;
+    }
+    legend { padding: 0 6px; color: var(--muted); font-size: 0.85rem; }
+    .scale-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .scale-row label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      cursor: pointer;
+      font-size: 0.92rem;
+    }
+    .scale-row label input { margin: 0 4px 0 0; }
+    .scale-row label.scale-checked {
+      border-color: var(--accent);
+      background: #e6f1f4;
+    }
+    textarea, input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    .hidden { display: none !important; }
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-top: 1px solid var(--border);
+      background: #fbfdff;
+    }
+    .actions .right-actions { display: flex; gap: 10px; }
+    button {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #ffffff;
+      cursor: pointer;
+      font-size: 0.93rem;
+    }
+    button.secondary {
+      background: #ffffff;
+      color: var(--accent);
+    }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .status { padding: 8px 12px; border-radius: 6px; font-size: 0.9rem; }
+    .status.ok { background: #e8f4ec; color: var(--ok); }
+    .status.err { background: #fdecea; color: var(--err); }
+    .small { color: var(--muted); font-size: 0.85rem; }
+    .instructions-inline {
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.5;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fbfdff;
+      margin-top: 10px;
+    }
+    .instructions-inline p,
+    .instructions-inline ul,
+    .instructions-inline ol { margin: 0 0 6px; }
+    .instructions-inline :first-child { margin-top: 0; }
+    .instructions-inline :last-child { margin-bottom: 0; }
+    .instructions-inline-label {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .progress-title { font-weight: 600; font-size: 0.95rem; }
+    .change-driver-wrap { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div>
+        <h1 id="headline">Loading...</h1>
+        <div class="meta" id="version-meta"></div>
+      </div>
+      <nav>
+        <a href="/assigned">Assigned</a>
+        <a href="/account">Account</a>
+      </nav>
+    </header>
+
+    <div class="content">
+      <div class="card">
+        <div class="progress-title" id="progress-title">Case &mdash; of &mdash;</div>
+        <div class="small" id="case-key-meta"></div>
+      </div>
+
+      <div id="case-body"></div>
+
+      <div id="status" class="status" style="display:none;"></div>
+    </div>
+
+    <div class="actions">
+      <button id="prev-btn" type="button" class="secondary">Previous</button>
+      <div class="right-actions">
+        <button id="save-draft-btn" type="button" class="secondary">Save draft</button>
+        <button id="next-btn" type="button">Next case</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="instructions-inline-label">Instructions</div>
+      <div id="instructions-body" class="instructions-inline">Loading instructions...</div>
+    </div>
+  </div>
+
+  <script>
+    const QUESTIONNAIRE_VERSION_ID = {{ questionnaire_version_id | tojson }};
+
+    const URGENCY_SCALE = [
+      { value: "1", label: "1 — Routine" },
+      { value: "2", label: "2" },
+      { value: "3", label: "3" },
+      { value: "4", label: "4" },
+      { value: "5", label: "5 — Emergency" },
+    ];
+    const CONFIDENCE_SCALE = [
+      { value: "1", label: "Very unsure" },
+      { value: "2", label: "Unsure" },
+      { value: "3", label: "Neutral" },
+      { value: "4", label: "Confident" },
+      { value: "5", label: "Very confident" },
+    ];
+    const ICD_NONE_VALUE = "__none__";
+
+    const REQUIRED_KEYS_BASE = [
+      "stage1_urgency",
+      "stage1_confidence",
+      "stage2_urgency",
+      "stage2_confidence",
+      "assessment_changed",
+      "icd_pick",
+      "icd_confidence",
+    ];
+
+    const state = {
+      detail: null,
+      cases: [],
+      currentIndex: 0,
+    };
+    let draftTimerId = null;
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, { credentials: "include", ...options });
+      let data = {};
+      try { data = await response.json(); } catch (_err) { data = {}; }
+      if (!response.ok) {
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      return data;
+    }
+
+    async function requestText(url) {
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error(`Asset fetch failed (${response.status})`);
+      }
+      return await response.text();
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function setStatus(message, kind) {
+      const el = document.getElementById("status");
+      if (!message) {
+        el.style.display = "none";
+        el.textContent = "";
+        return;
+      }
+      el.style.display = "block";
+      el.className = `status ${kind === "err" ? "err" : "ok"}`;
+      el.textContent = message;
+    }
+
+    function renderInstructionsMarkdown(markdown) {
+      const raw = String(markdown || "").replaceAll("\r\n", "\n").trim();
+      if (!raw) {
+        return '<p class="small">No instructions provided.</p>';
+      }
+      const lines = raw.split("\n");
+      const html = [];
+      let paragraph = [];
+      let inUl = false;
+
+      function flushParagraph() {
+        if (!paragraph.length) return;
+        html.push(`<p>${escapeHtml(paragraph.join(" "))}</p>`);
+        paragraph = [];
+      }
+      function closeList() {
+        if (inUl) { html.push("</ul>"); inUl = false; }
+      }
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) {
+          flushParagraph();
+          closeList();
+          continue;
+        }
+        if (line.startsWith("- ") || line.startsWith("* ")) {
+          flushParagraph();
+          if (!inUl) { html.push("<ul>"); inUl = true; }
+          html.push(`<li>${escapeHtml(line.slice(2))}</li>`);
+          continue;
+        }
+        if (line.startsWith("# ")) {
+          flushParagraph(); closeList();
+          html.push(`<h4>${escapeHtml(line.slice(2))}</h4>`);
+          continue;
+        }
+        if (line.startsWith("## ")) {
+          flushParagraph(); closeList();
+          html.push(`<h5>${escapeHtml(line.slice(3))}</h5>`);
+          continue;
+        }
+        paragraph.push(line);
+      }
+      flushParagraph();
+      closeList();
+      return html.join("");
+    }
+
+    function parseIcdCodes(text) {
+      return String(text || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    }
+
+    function readStoredAnswer(question) {
+      const existing = (state.detail.existing_answers || []).find((entry) => entry.question_id === question.id);
+      const rawValue = existing ? existing.value : null;
+      if (typeof rawValue === "string" && rawValue) {
+        try {
+          const parsed = JSON.parse(rawValue);
+          if (parsed && typeof parsed === "object") {
+            return parsed;
+          }
+        } catch (_err) {
+          // fall through
+        }
+      }
+      return {};
+    }
+
+    async function loadDetail() {
+      const detail = await requestJson(`/api/user/questionnaires/${encodeURIComponent(QUESTIONNAIRE_VERSION_ID)}`);
+      state.detail = detail;
+      document.getElementById("headline").textContent = detail.title || "Questionnaire";
+      document.getElementById("version-meta").textContent = `Version ${detail.version_number}`;
+      document.getElementById("instructions-body").innerHTML = renderInstructionsMarkdown(detail.instructions_markdown);
+
+      const questions = [...(detail.questions || [])].sort((a, b) => a.position - b.position);
+      state.cases = await Promise.all(questions.map((question) => buildCaseFromQuestion(question)));
+      state.currentIndex = findFirstIncompleteIndex();
+      renderCurrentCase();
+    }
+
+    async function buildCaseFromQuestion(question) {
+      const config = (question && question.config) || {};
+      const stimulusIds = Array.isArray(config.stimulus_asset_ids) ? config.stimulus_asset_ids : [];
+      const stimulusLabels = Array.isArray(config.stimulus_labels) ? config.stimulus_labels : [];
+      const roleToAssetId = {};
+      for (let i = 0; i < stimulusIds.length; i += 1) {
+        const role = (stimulusLabels[i] || "").trim();
+        if (role) {
+          roleToAssetId[role] = stimulusIds[i];
+        }
+      }
+
+      const assetFetches = ["stage1", "stage2", "icd"].map(async (role) => {
+        const assetId = roleToAssetId[role];
+        if (!assetId) return [role, ""];
+        try {
+          const text = await requestText(
+            `/api/user/questionnaires/${encodeURIComponent(QUESTIONNAIRE_VERSION_ID)}/assets/${encodeURIComponent(assetId)}/content`,
+          );
+          return [role, text];
+        } catch (_err) {
+          return [role, ""];
+        }
+      });
+      const roleTextEntries = await Promise.all(assetFetches);
+      const roleText = Object.fromEntries(roleTextEntries);
+
+      return {
+        question,
+        case_key: String(config.case_key || "").trim() || question.id,
+        stage1Text: roleText.stage1 || "",
+        stage2Text: roleText.stage2 || "",
+        icdCodes: parseIcdCodes(roleText.icd),
+        answer: readStoredAnswer(question),
+      };
+    }
+
+    function isCaseComplete(caseObj) {
+      const a = caseObj.answer || {};
+      for (const key of REQUIRED_KEYS_BASE) {
+        if (!a[key] || String(a[key]).trim() === "") return false;
+      }
+      if (a.icd_pick === ICD_NONE_VALUE && !String(a.icd_custom || "").trim()) {
+        return false;
+      }
+      return true;
+    }
+
+    function findFirstIncompleteIndex() {
+      for (let i = 0; i < state.cases.length; i += 1) {
+        if (!isCaseComplete(state.cases[i])) return i;
+      }
+      return Math.max(0, state.cases.length - 1);
+    }
+
+    function buildScaleRowHtml(name, values, current) {
+      return values.map((entry) => {
+        const id = `${name}-${entry.value}`;
+        const checked = String(current || "") === entry.value;
+        return `
+          <label class="${checked ? "scale-checked" : ""}">
+            <input type="radio" name="${escapeHtml(name)}" value="${escapeHtml(entry.value)}" id="${escapeHtml(id)}" ${checked ? "checked" : ""} />
+            ${escapeHtml(entry.label)}
+          </label>
+        `;
+      }).join("");
+    }
+
+    function renderCurrentCase() {
+      const total = state.cases.length;
+      const progressTitle = document.getElementById("progress-title");
+      const caseKeyMeta = document.getElementById("case-key-meta");
+      const body = document.getElementById("case-body");
+
+      if (!total) {
+        progressTitle.textContent = "No cases to review.";
+        caseKeyMeta.textContent = "";
+        body.innerHTML = "";
+        document.getElementById("prev-btn").disabled = true;
+        document.getElementById("next-btn").disabled = true;
+        document.getElementById("save-draft-btn").disabled = true;
+        return;
+      }
+
+      const idx = state.currentIndex;
+      const caseObj = state.cases[idx];
+      progressTitle.textContent = `Case ${idx + 1} of ${total}`;
+      caseKeyMeta.textContent = `Identifier: ${caseObj.case_key}`;
+
+      const a = caseObj.answer || {};
+      const showStage2 = Boolean(a.stage1_urgency && a.stage1_confidence);
+      const showIcd = showStage2 && Boolean(a.stage2_urgency && a.stage2_confidence && a.assessment_changed);
+      const showChangeDriver = a.assessment_changed === "yes";
+
+      const icdRadios = caseObj.icdCodes.map((code, i) => {
+        const id = `icd-pick-${i}`;
+        const checked = a.icd_pick === code;
+        return `
+          <label class="${checked ? "scale-checked" : ""}">
+            <input type="radio" name="icd_pick" value="${escapeHtml(code)}" id="${escapeHtml(id)}" ${checked ? "checked" : ""} />
+            ${escapeHtml(code)}
+          </label>
+        `;
+      }).join("");
+      const icdNoneChecked = a.icd_pick === ICD_NONE_VALUE;
+
+      body.innerHTML = `
+        <section class="card" data-section="stage1">
+          <h2>Stage 1 &mdash; Patient self-report</h2>
+          <pre class="report-text">${escapeHtml(caseObj.stage1Text)}</pre>
+          <fieldset>
+            <legend>Urgency (1 routine &mdash; 5 emergency)</legend>
+            <div class="scale-row" data-field-group="stage1_urgency">
+              ${buildScaleRowHtml("stage1_urgency", URGENCY_SCALE, a.stage1_urgency)}
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Confidence in this rating</legend>
+            <div class="scale-row" data-field-group="stage1_confidence">
+              ${buildScaleRowHtml("stage1_confidence", CONFIDENCE_SCALE, a.stage1_confidence)}
+            </div>
+          </fieldset>
+        </section>
+
+        <section class="card ${showStage2 ? "" : "hidden"}" data-section="stage2">
+          <h2>Stage 2 &mdash; With physician findings</h2>
+          <pre class="report-text">${escapeHtml(caseObj.stage2Text)}</pre>
+          <fieldset>
+            <legend>Urgency (1 routine &mdash; 5 emergency)</legend>
+            <div class="scale-row" data-field-group="stage2_urgency">
+              ${buildScaleRowHtml("stage2_urgency", URGENCY_SCALE, a.stage2_urgency)}
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Confidence in this rating</legend>
+            <div class="scale-row" data-field-group="stage2_confidence">
+              ${buildScaleRowHtml("stage2_confidence", CONFIDENCE_SCALE, a.stage2_confidence)}
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Did your assessment change?</legend>
+            <div class="scale-row" data-field-group="assessment_changed">
+              <label class="${a.assessment_changed === "no" ? "scale-checked" : ""}">
+                <input type="radio" name="assessment_changed" value="no" ${a.assessment_changed === "no" ? "checked" : ""} />
+                No
+              </label>
+              <label class="${a.assessment_changed === "yes" ? "scale-checked" : ""}">
+                <input type="radio" name="assessment_changed" value="yes" ${a.assessment_changed === "yes" ? "checked" : ""} />
+                Yes
+              </label>
+            </div>
+            <div class="change-driver-wrap ${showChangeDriver ? "" : "hidden"}">
+              <label for="change-driver" class="small">Which piece of information drove the change?</label>
+              <textarea id="change-driver" data-field="change_driver" placeholder="Briefly note the key driver...">${escapeHtml(a.change_driver || "")}</textarea>
+            </div>
+          </fieldset>
+        </section>
+
+        <section class="card ${showIcd ? "" : "hidden"}" data-section="icd">
+          <h2>ICD-11 candidates</h2>
+          <p class="small">Pick the most clinically plausible code, or choose &ldquo;None of these&rdquo; and write your own.</p>
+          <fieldset>
+            <legend>Candidate codes</legend>
+            <div class="scale-row" data-field-group="icd_pick">
+              ${icdRadios}
+              <label class="${icdNoneChecked ? "scale-checked" : ""}">
+                <input type="radio" name="icd_pick" value="${escapeHtml(ICD_NONE_VALUE)}" ${icdNoneChecked ? "checked" : ""} />
+                None of these
+              </label>
+            </div>
+            <div class="change-driver-wrap ${icdNoneChecked ? "" : "hidden"}" data-icd-custom-wrap>
+              <label for="icd-custom" class="small">Your preferred ICD-11 code (or free-text diagnosis)</label>
+              <input id="icd-custom" type="text" data-field="icd_custom" placeholder="e.g. 9A06.7Z or short diagnosis" value="${escapeHtml(a.icd_custom || "")}" />
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Confidence in this diagnostic choice</legend>
+            <div class="scale-row" data-field-group="icd_confidence">
+              ${buildScaleRowHtml("icd_confidence", CONFIDENCE_SCALE, a.icd_confidence)}
+            </div>
+          </fieldset>
+        </section>
+      `;
+
+      attachFieldHandlers();
+      syncNavButtons();
+    }
+
+    function attachFieldHandlers() {
+      const body = document.getElementById("case-body");
+      body.querySelectorAll("input[type='radio']").forEach((input) => {
+        input.addEventListener("change", () => {
+          const name = input.name;
+          const caseObj = state.cases[state.currentIndex];
+          caseObj.answer[name] = input.value;
+          if (name === "assessment_changed" && input.value === "no") {
+            caseObj.answer.change_driver = "";
+          }
+          if (name === "icd_pick" && input.value !== ICD_NONE_VALUE) {
+            caseObj.answer.icd_custom = "";
+          }
+          renderCurrentCase();
+          queueDraftSave();
+        });
+      });
+      body.querySelectorAll("[data-field]").forEach((el) => {
+        el.addEventListener("input", () => {
+          const key = el.getAttribute("data-field");
+          const caseObj = state.cases[state.currentIndex];
+          caseObj.answer[key] = el.value;
+          syncNavButtons();
+          queueDraftSave();
+        });
+      });
+    }
+
+    function syncNavButtons() {
+      const total = state.cases.length;
+      const idx = state.currentIndex;
+      const caseObj = state.cases[idx];
+      const complete = caseObj ? isCaseComplete(caseObj) : false;
+      const isLast = idx === total - 1;
+      document.getElementById("prev-btn").disabled = idx === 0;
+      document.getElementById("next-btn").disabled = !complete;
+      document.getElementById("next-btn").textContent = isLast ? "Submit all responses" : "Next case";
+    }
+
+    function buildAnswersPayload() {
+      return state.cases
+        .filter((c) => Object.keys(c.answer || {}).length > 0)
+        .map((c) => ({ question_id: c.question.id, value: JSON.stringify(c.answer) }));
+    }
+
+    function queueDraftSave() {
+      if (draftTimerId) {
+        clearTimeout(draftTimerId);
+      }
+      draftTimerId = setTimeout(() => {
+        draftTimerId = null;
+        saveDraft().catch((err) => setStatus(err.message || String(err), "err"));
+      }, 600);
+    }
+
+    async function saveDraft() {
+      const answers = buildAnswersPayload();
+      await requestJson(
+        `/api/user/questionnaires/${encodeURIComponent(QUESTIONNAIRE_VERSION_ID)}/draft`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answers }),
+        },
+      );
+      setStatus("Draft saved.", "ok");
+    }
+
+    async function submitAll() {
+      for (let i = 0; i < state.cases.length; i += 1) {
+        if (!isCaseComplete(state.cases[i])) {
+          state.currentIndex = i;
+          renderCurrentCase();
+          throw new Error(`Case ${i + 1} is incomplete.`);
+        }
+      }
+      const answers = buildAnswersPayload();
+      await requestJson(
+        `/api/user/questionnaires/${encodeURIComponent(QUESTIONNAIRE_VERSION_ID)}/responses`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answers }),
+        },
+      );
+      setStatus("Responses submitted. Thank you.", "ok");
+      document.getElementById("next-btn").disabled = true;
+      document.getElementById("save-draft-btn").disabled = true;
+      document.getElementById("prev-btn").disabled = true;
+    }
+
+    document.getElementById("prev-btn").addEventListener("click", () => {
+      if (state.currentIndex > 0) {
+        state.currentIndex -= 1;
+        renderCurrentCase();
+        setStatus("", "ok");
+      }
+    });
+
+    document.getElementById("next-btn").addEventListener("click", async () => {
+      try {
+        const total = state.cases.length;
+        const isLast = state.currentIndex === total - 1;
+        if (draftTimerId) { clearTimeout(draftTimerId); draftTimerId = null; }
+        await saveDraft();
+        if (isLast) {
+          await submitAll();
+          return;
+        }
+        state.currentIndex += 1;
+        renderCurrentCase();
+        setStatus("", "ok");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (err) {
+        setStatus(err.message || String(err), "err");
+      }
+    });
+
+    document.getElementById("save-draft-btn").addEventListener("click", async () => {
+      try {
+        if (draftTimerId) { clearTimeout(draftTimerId); draftTimerId = null; }
+        await saveDraft();
+      } catch (err) {
+        setStatus(err.message || String(err), "err");
+      }
+    });
+
+    (async function init() {
+      try {
+        await loadDetail();
+      } catch (err) {
+        setStatus(err.message || String(err), "err");
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<div
+  data-auto-case-template
+  data-auto-case-template-type="long_text"
+  data-auto-case-template-required="true"
+  data-auto-case-template-prompt-template="Case {case_index} of {case_total}: {case_key}"
+></div>
+<div class="grid-2">
+  <div>
+    <label for="recipe-text-two-stage-stage1-folder">Stage 1 folder</label>
+    <input id="recipe-text-two-stage-stage1-folder" type="text" data-recipe-config-key="stage1_folder" value="stage1" />
+  </div>
+  <div>
+    <label for="recipe-text-two-stage-stage2-folder">Stage 2 folder</label>
+    <input id="recipe-text-two-stage-stage2-folder" type="text" data-recipe-config-key="stage2_folder" value="stage2" />
+  </div>
+</div>
+<div class="grid-2">
+  <div>
+    <label for="recipe-text-two-stage-icd-folder">ICD folder</label>
+    <input id="recipe-text-two-stage-icd-folder" type="text" data-recipe-config-key="icd_folder" value="icd" />
+  </div>
+  <div>
+    <label for="recipe-text-two-stage-strict">Strict pairing</label>
+    <select id="recipe-text-two-stage-strict" data-recipe-config-key="strict">
+      <option value="true" selected>true</option>
+      <option value="false">false</option>
+    </select>
+  </div>
+</div>
+<div class="small">
+  Each case is one folder-stem with three text files: <code>stage1/&lt;stem&gt;.txt</code>,
+  <code>stage2/&lt;stem&gt;.txt</code>, <code>icd/&lt;stem&gt;.txt</code>.
+  The per-case review form (urgency, confidence, change driver, ICD pick, ICD confidence)
+  is generated automatically &mdash; no question templates needed.
+  When strict, cases missing any of the three roles are skipped.
+</div>
