@@ -1,0 +1,40 @@
+# medirater fly deployment — demo only.
+#
+# This app is single-machine on purpose: SQLite is ephemeral (no volume),
+# and passkeys + sessions are pinned to one host's local DB. Multiple
+# machines would diverge instantly.
+#
+# Machine count is NOT set in fly.toml — fly tracks it in its own state.
+# After the first deploy, run once:
+#
+#   fly scale count 1 --app medirater
+#
+# Real production goes on a self-hosted Pi (see docs/pi_deployment.md);
+# this fly config is throwaway.
+
+app = 'medirater'
+primary_region = 'fra'
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  APP_DATABASE_URL = "sqlite:///./app.db"
+  APP_WEBAUTHN_RP_ID = "medirater.fly.dev"
+  APP_WEBAUTHN_ORIGIN = "https://medirater.fly.dev"
+  APP_WEBAUTHN_RP_NAME = "Medirater"
+  APP_SESSION_COOKIE_SECURE = "true"
+  APP_CORS_ALLOW_ORIGINS = "https://medirater.fly.dev"
+  APP_INSECURE_DEV_WEBAUTHN = "false"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

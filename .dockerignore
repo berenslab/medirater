@@ -1,0 +1,16 @@
+fly.toml
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+app.db
+.env
+.env.*
+dev/
+docs/
+tests/
+.github/
+.DS_Store
