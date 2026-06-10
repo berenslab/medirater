@@ -11,3 +11,4 @@ app.db
 .DS_Store
 
 dev/
+backups
