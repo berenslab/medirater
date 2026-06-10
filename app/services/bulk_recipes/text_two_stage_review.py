@@ -19,6 +19,9 @@ def group_assets(assets: list[Asset], recipe_config: dict) -> GroupingResult:
     stage1_folder = str(recipe_config.get("stage1_folder", "stage1")).strip() or "stage1"
     stage2_folder = str(recipe_config.get("stage2_folder", "stage2")).strip() or "stage2"
     icd_folder = str(recipe_config.get("icd_folder", "icd")).strip() or "icd"
+    allowed_list_file = str(
+        recipe_config.get("allowed_list_file", "allowed_icd11_list.txt")
+    ).strip()
     strict = bool(recipe_config.get("strict", True))
 
     role_by_folder = {
@@ -29,9 +32,18 @@ def group_assets(assets: list[Asset], recipe_config: dict) -> GroupingResult:
 
     grouped: dict[str, dict[str, str]] = defaultdict(dict)
     warnings: list[str] = []
+    allowed_asset_id: str | None = None
 
     for asset in sorted_assets_by_path(assets):
         path = PurePosixPath(asset_path(asset))
+        if allowed_list_file and path.name == allowed_list_file:
+            if allowed_asset_id is None:
+                allowed_asset_id = asset.id
+            else:
+                warnings.append(
+                    f"Skipped duplicate allowed-list file: {path.as_posix()}"
+                )
+            continue
         parent = path.parent.name
         role = role_by_folder.get(parent)
         if not role:
@@ -68,12 +80,21 @@ def group_assets(assets: list[Asset], recipe_config: dict) -> GroupingResult:
             if asset_id:
                 stimulus_asset_ids.append(asset_id)
                 stimulus_labels.append(role)
+        if allowed_asset_id:
+            stimulus_asset_ids.append(allowed_asset_id)
+            stimulus_labels.append("allowed")
         cases.append(
             GroupedCase(
                 case_key=case_key,
                 stimulus_asset_ids=stimulus_asset_ids,
                 stimulus_labels=stimulus_labels,
             )
+        )
+
+    if allowed_list_file and allowed_asset_id is None:
+        warnings.append(
+            f"No allowed-list file '{allowed_list_file}' found: candidate codes will "
+            "show without diagnosis names and the full-list picker will be unavailable"
         )
 
     return GroupingResult(cases=cases, warnings=warnings)
@@ -86,15 +107,26 @@ RECIPE = RegisteredBulkRecipe(
     instructions=[
         "Upload three sibling folders paired by filename stem: stage1/, stage2/, icd/.",
         "stage1/<case>.txt and stage2/<case>.txt are narrative clinical summaries.",
-        "icd/<case>.txt holds AI-generated ICD-11 candidate codes, one per line.",
+        "icd/<case>.txt holds AI-generated ICD-11 candidate codes, one per line; "
+        "'Name | Code' lines are also accepted.",
+        "Optionally include one allowed-list file (default allowed_icd11_list.txt, "
+        "'Name | Code' per line): it names bare candidate codes and powers the "
+        "full-list diagnosis picker shown when a rater answers 'None of these'.",
         "One review form per case is auto-generated; no question templates to author.",
     ],
     example_paths=[
         "stage1/d1_1-158.txt",
         "stage2/d1_1-158.txt",
         "icd/d1_1-158.txt",
+        "allowed_icd11_list.txt",
     ],
-    config_keys=["stage1_folder", "stage2_folder", "icd_folder", "strict"],
+    config_keys=[
+        "stage1_folder",
+        "stage2_folder",
+        "icd_folder",
+        "allowed_list_file",
+        "strict",
+    ],
     supports_patch_question_template=False,
     grouper=group_assets,
     allows_case_question_templates=False,

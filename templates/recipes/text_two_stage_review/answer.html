@@ -158,6 +158,54 @@
     }
     .progress-title { font-weight: 600; font-size: 0.95rem; }
     .change-driver-wrap { margin-top: 8px; }
+    .scale-row.scale-col { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .code-tag {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.85em;
+      color: var(--muted);
+    }
+    .alt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .alt-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      background: #e6f1f4;
+      font-size: 0.88rem;
+    }
+    .alt-chip button {
+      border: none;
+      background: none;
+      color: var(--accent);
+      font-size: 1.05rem;
+      line-height: 1;
+      padding: 0;
+      cursor: pointer;
+    }
+    .alt-list {
+      max-height: 230px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-top: 6px;
+      background: #ffffff;
+    }
+    .alt-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 0.92rem;
+      border-bottom: 1px solid #eef2f6;
+    }
+    .alt-item:last-child { border-bottom: none; }
+    .alt-item:hover { background: #f1f5f9; }
+    .alt-item input { margin: 0; flex: none; }
+    .alt-empty { padding: 10px; }
+    .alt-free-text { margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -252,6 +300,19 @@
       return await response.text();
     }
 
+    const assetTextPromises = new Map();
+    function fetchAssetText(assetId) {
+      if (!assetTextPromises.has(assetId)) {
+        assetTextPromises.set(
+          assetId,
+          requestText(
+            `/api/user/questionnaires/${encodeURIComponent(QUESTIONNAIRE_VERSION_ID)}/assets/${encodeURIComponent(assetId)}/content`,
+          ).catch(() => ""),
+        );
+      }
+      return assetTextPromises.get(assetId);
+    }
+
     function escapeHtml(value) {
       return String(value == null ? "" : value)
         .replaceAll("&", "&amp;")
@@ -322,11 +383,34 @@
       return html.join("");
     }
 
-    function parseIcdCodes(text) {
+    function parseIcdLines(text) {
       return String(text || "")
         .split(/\r?\n/)
         .map((line) => line.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((line) => {
+          const splitAt = line.lastIndexOf("|");
+          if (splitAt === -1) {
+            return { code: line, name: null };
+          }
+          return {
+            code: line.slice(splitAt + 1).trim(),
+            name: line.slice(0, splitAt).trim() || null,
+          };
+        })
+        .filter((entry) => entry.code);
+    }
+
+    function icdLabelHtml(code, name, nameByCode) {
+      const resolved = name || (nameByCode && nameByCode.get(code)) || "";
+      const codeHtml = `<span class="code-tag">${escapeHtml(code)}</span>`;
+      return resolved ? `${escapeHtml(resolved)} ${codeHtml}` : codeHtml;
+    }
+
+    function altPicks(caseObj) {
+      const picks = caseObj && caseObj.answer ? caseObj.answer.icd_alt_picks : null;
+      if (!Array.isArray(picks)) return [];
+      return picks.filter((code) => typeof code === "string" && code);
     }
 
     function readStoredAnswer(question) {
@@ -370,27 +454,27 @@
         }
       }
 
-      const assetFetches = ["stage1", "stage2", "icd"].map(async (role) => {
+      const assetFetches = ["stage1", "stage2", "icd", "allowed"].map(async (role) => {
         const assetId = roleToAssetId[role];
         if (!assetId) return [role, ""];
-        try {
-          const text = await requestText(
-            `/api/user/questionnaires/${encodeURIComponent(QUESTIONNAIRE_VERSION_ID)}/assets/${encodeURIComponent(assetId)}/content`,
-          );
-          return [role, text];
-        } catch (_err) {
-          return [role, ""];
-        }
+        return [role, await fetchAssetText(assetId)];
       });
       const roleTextEntries = await Promise.all(assetFetches);
       const roleText = Object.fromEntries(roleTextEntries);
+
+      const allowedEntries = parseIcdLines(roleText.allowed).sort((a, b) =>
+        (a.name || a.code).localeCompare(b.name || b.code, undefined, { sensitivity: "base" }));
 
       return {
         question,
         case_key: String(config.case_key || "").trim() || question.id,
         stage1Text: roleText.stage1 || "",
         stage2Text: roleText.stage2 || "",
-        icdCodes: parseIcdCodes(roleText.icd),
+        icdCandidates: parseIcdLines(roleText.icd),
+        allowedEntries,
+        nameByCode: new Map(
+          allowedEntries.filter((entry) => entry.name).map((entry) => [entry.code, entry.name]),
+        ),
         answer: readStoredAnswer(question),
       };
     }
@@ -400,8 +484,10 @@
       for (const key of REQUIRED_KEYS_BASE) {
         if (!a[key] || String(a[key]).trim() === "") return false;
       }
-      if (a.icd_pick === ICD_NONE_VALUE && !String(a.icd_custom || "").trim()) {
-        return false;
+      if (a.icd_pick === ICD_NONE_VALUE) {
+        const hasAltPick = Array.isArray(a.icd_alt_picks) && a.icd_alt_picks.length > 0;
+        const hasFreeText = Boolean(String(a.icd_custom || "").trim());
+        if (!hasAltPick && !hasFreeText) return false;
       }
       return true;
     }
@@ -452,17 +538,18 @@
       const showIcd = showStage2 && Boolean(a.stage2_urgency && a.stage2_confidence && a.assessment_changed);
       const showChangeDriver = a.assessment_changed === "yes";
 
-      const icdRadios = caseObj.icdCodes.map((code, i) => {
+      const icdRadios = caseObj.icdCandidates.map((candidate, i) => {
         const id = `icd-pick-${i}`;
-        const checked = a.icd_pick === code;
+        const checked = a.icd_pick === candidate.code;
         return `
           <label class="${checked ? "scale-checked" : ""}">
-            <input type="radio" name="icd_pick" value="${escapeHtml(code)}" id="${escapeHtml(id)}" ${checked ? "checked" : ""} />
-            ${escapeHtml(code)}
+            <input type="radio" name="icd_pick" value="${escapeHtml(candidate.code)}" id="${escapeHtml(id)}" ${checked ? "checked" : ""} />
+            <span>${icdLabelHtml(candidate.code, candidate.name, caseObj.nameByCode)}</span>
           </label>
         `;
       }).join("");
       const icdNoneChecked = a.icd_pick === ICD_NONE_VALUE;
+      const hasAllowedList = caseObj.allowedEntries.length > 0;
 
       body.innerHTML = `
         <section class="card" data-section="stage1">
@@ -518,19 +605,27 @@
 
         <section class="card ${showIcd ? "" : "hidden"}" data-section="icd">
           <h2>ICD-11 candidates</h2>
-          <p class="small">Pick the most clinically plausible code, or choose &ldquo;None of these&rdquo; and write your own.</p>
+          <p class="small">Pick the most clinically plausible diagnosis, or choose &ldquo;None of these&rdquo; and select your own from the full list.</p>
           <fieldset>
-            <legend>Candidate codes</legend>
-            <div class="scale-row" data-field-group="icd_pick">
+            <legend>Candidate diagnoses</legend>
+            <div class="scale-row scale-col" data-field-group="icd_pick">
               ${icdRadios}
               <label class="${icdNoneChecked ? "scale-checked" : ""}">
                 <input type="radio" name="icd_pick" value="${escapeHtml(ICD_NONE_VALUE)}" ${icdNoneChecked ? "checked" : ""} />
                 None of these
               </label>
             </div>
-            <div class="change-driver-wrap ${icdNoneChecked ? "" : "hidden"}" data-icd-custom-wrap>
-              <label for="icd-custom" class="small">Your preferred ICD-11 code (or free-text diagnosis)</label>
-              <input id="icd-custom" type="text" data-field="icd_custom" placeholder="e.g. 9A06.7Z or short diagnosis" value="${escapeHtml(a.icd_custom || "")}" />
+            <div class="change-driver-wrap ${icdNoneChecked ? "" : "hidden"}" data-alt-picker>
+              ${hasAllowedList ? `
+              <label for="icd-alt-filter" class="small">Select all diagnoses you consider plausible (type to search the allowed ICD-11 list):</label>
+              <div class="alt-chips" data-alt-chips></div>
+              <input id="icd-alt-filter" type="text" data-alt-filter placeholder="Filter by diagnosis name or code, e.g. glaucoma or 9C61" autocomplete="off" />
+              <div class="alt-list" data-alt-list></div>
+              ` : ""}
+              <div class="alt-free-text">
+                <label for="icd-custom" class="small">${hasAllowedList ? "Optional free-text diagnosis (e.g. if not in the list)" : "Your preferred diagnosis (free text)"}</label>
+                <input id="icd-custom" type="text" data-field="icd_custom" placeholder="${hasAllowedList ? "Optional free-text diagnosis" : "Your preferred diagnosis"}" value="${escapeHtml(a.icd_custom || "")}" />
+              </div>
             </div>
           </fieldset>
           <fieldset>
@@ -543,7 +638,82 @@
       `;
 
       attachFieldHandlers();
+      attachAltPickerHandlers();
       syncNavButtons();
+    }
+
+    function renderAltChips(caseObj) {
+      const wrap = document.querySelector("[data-alt-chips]");
+      if (!wrap) return;
+      const picks = altPicks(caseObj);
+      if (!picks.length) {
+        wrap.innerHTML = '<span class="small">No diagnosis selected yet.</span>';
+        return;
+      }
+      wrap.innerHTML = picks.map((code) => `
+        <span class="alt-chip">
+          <span>${icdLabelHtml(code, null, caseObj.nameByCode)}</span>
+          <button type="button" data-alt-remove="${escapeHtml(code)}" aria-label="Remove ${escapeHtml(code)}">&times;</button>
+        </span>
+      `).join("");
+    }
+
+    function renderAltList(caseObj, filterText) {
+      const listEl = document.querySelector("[data-alt-list]");
+      if (!listEl) return;
+      const needle = String(filterText || "").trim().toLowerCase();
+      const picked = new Set(altPicks(caseObj));
+      const matches = caseObj.allowedEntries.filter((entry) =>
+        !needle
+        || (entry.name || "").toLowerCase().includes(needle)
+        || entry.code.toLowerCase().includes(needle));
+      if (!matches.length) {
+        listEl.innerHTML = '<div class="alt-empty small">No matching diagnosis &mdash; use the free-text field below.</div>';
+        return;
+      }
+      listEl.innerHTML = matches.map((entry) => `
+        <label class="alt-item">
+          <input type="checkbox" value="${escapeHtml(entry.code)}" ${picked.has(entry.code) ? "checked" : ""} />
+          <span>${icdLabelHtml(entry.code, entry.name, caseObj.nameByCode)}</span>
+        </label>
+      `).join("");
+    }
+
+    function attachAltPickerHandlers() {
+      const picker = document.querySelector("[data-alt-picker]");
+      const caseObj = state.cases[state.currentIndex];
+      if (!picker || !caseObj) return;
+      const filterEl = picker.querySelector("[data-alt-filter]");
+      if (!filterEl) return;
+      renderAltChips(caseObj);
+      renderAltList(caseObj, filterEl.value);
+      filterEl.addEventListener("input", () => {
+        renderAltList(caseObj, filterEl.value);
+      });
+      picker.querySelector("[data-alt-list]").addEventListener("change", (event) => {
+        const input = event.target;
+        if (!input || input.type !== "checkbox") return;
+        const picks = new Set(altPicks(caseObj));
+        if (input.checked) {
+          picks.add(input.value);
+        } else {
+          picks.delete(input.value);
+        }
+        caseObj.answer.icd_alt_picks = [...picks];
+        renderAltChips(caseObj);
+        syncNavButtons();
+        queueDraftSave();
+      });
+      picker.querySelector("[data-alt-chips]").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-alt-remove]");
+        if (!button) return;
+        const code = button.getAttribute("data-alt-remove");
+        caseObj.answer.icd_alt_picks = altPicks(caseObj).filter((entry) => entry !== code);
+        renderAltChips(caseObj);
+        renderAltList(caseObj, filterEl.value);
+        syncNavButtons();
+        queueDraftSave();
+      });
     }
 
     function attachFieldHandlers() {
@@ -558,6 +728,7 @@
           }
           if (name === "icd_pick" && input.value !== ICD_NONE_VALUE) {
             caseObj.answer.icd_custom = "";
+            caseObj.answer.icd_alt_picks = [];
           }
           renderCurrentCase();
           queueDraftSave();

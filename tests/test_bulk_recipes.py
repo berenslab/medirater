@@ -644,3 +644,71 @@ def test_apply_edited_preview_questions(test_session_factory) -> None:
         assert questions[0]["prompt_text"] == "Edited prompt from frontend"
         assert questions[0]["question_type"] == "single_choice"
         assert [item["value"] for item in questions[0]["choices"]] == ["normal", "abnormal"]
+
+
+def _two_stage_asset(asset_id: str, path: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=asset_id,
+        original_path=path,
+        file_name=path.rsplit("/", 1)[-1],
+    )
+
+
+def test_text_two_stage_review_grouping_attaches_allowed_list() -> None:
+    from app.services.bulk_recipes.text_two_stage_review import group_assets
+
+    assets = [
+        _two_stage_asset("a1", "user_study/stage1/case1.txt"),
+        _two_stage_asset("a2", "user_study/stage2/case1.txt"),
+        _two_stage_asset("a3", "user_study/icd/case1.txt"),
+        _two_stage_asset("a4", "user_study/allowed_icd11_list.txt"),
+        _two_stage_asset("a5", "user_study/user_study.md"),
+    ]
+
+    result = group_assets(assets, {})
+
+    assert len(result.cases) == 1
+    case = result.cases[0]
+    assert case.case_key == "case1"
+    assert case.stimulus_labels == ["stage1", "stage2", "icd", "allowed"]
+    assert case.stimulus_asset_ids == ["a1", "a2", "a3", "a4"]
+    assert any("user_study.md" in warning for warning in result.warnings)
+    assert not any("allowed_icd11_list.txt" in warning for warning in result.warnings)
+
+
+def test_text_two_stage_review_grouping_warns_when_allowed_list_missing() -> None:
+    from app.services.bulk_recipes.text_two_stage_review import group_assets
+
+    assets = [
+        _two_stage_asset("a1", "user_study/stage1/case1.txt"),
+        _two_stage_asset("a2", "user_study/stage2/case1.txt"),
+        _two_stage_asset("a3", "user_study/icd/case1.txt"),
+    ]
+
+    result = group_assets(assets, {})
+    assert result.cases[0].stimulus_labels == ["stage1", "stage2", "icd"]
+    assert any("allowed-list" in warning for warning in result.warnings)
+
+    disabled = group_assets(assets, {"allowed_list_file": ""})
+    assert disabled.cases[0].stimulus_labels == ["stage1", "stage2", "icd"]
+    assert not any("allowed-list" in warning for warning in disabled.warnings)
+
+
+def test_text_two_stage_review_grouping_custom_allowed_list_name() -> None:
+    from app.services.bulk_recipes.text_two_stage_review import group_assets
+
+    assets = [
+        _two_stage_asset("a1", "study/stage1/case1.txt"),
+        _two_stage_asset("a2", "study/stage2/case1.txt"),
+        _two_stage_asset("a3", "study/icd/case1.txt"),
+        _two_stage_asset("a4", "study/codes.txt"),
+        _two_stage_asset("a5", "study/extra/codes.txt"),
+    ]
+
+    result = group_assets(assets, {"allowed_list_file": "codes.txt"})
+    case = result.cases[0]
+    assert case.stimulus_labels == ["stage1", "stage2", "icd", "allowed"]
+    assert case.stimulus_asset_ids[-1] == "a4"
+    assert any("duplicate allowed-list" in warning for warning in result.warnings)

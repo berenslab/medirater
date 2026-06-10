@@ -27,10 +27,19 @@
     </select>
   </div>
 </div>
+<div class="grid-2">
+  <div>
+    <label for="recipe-text-two-stage-allowed-list">Allowed ICD-11 list file</label>
+    <input id="recipe-text-two-stage-allowed-list" type="text" data-recipe-config-key="allowed_list_file" value="allowed_icd11_list.txt" />
+  </div>
+</div>
 <div class="small">
   Each case is one folder-stem with three text files: <code>stage1/&lt;stem&gt;.txt</code>,
   <code>stage2/&lt;stem&gt;.txt</code>, <code>icd/&lt;stem&gt;.txt</code>.
   The per-case review form (urgency, confidence, change driver, ICD pick, ICD confidence)
   is generated automatically &mdash; no question templates needed.
+  Optionally include one allowed-list file (<code>Name | Code</code> per line, matched by
+  filename anywhere in the upload): it names bare candidate codes and powers the searchable
+  full-list picker shown when a rater answers &ldquo;None of these&rdquo;.
   When strict, cases missing any of the three roles are skipped.
 </div>
