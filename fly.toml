@@ -1,8 +1,16 @@
 # medirater fly deployment — demo only.
 #
-# This app is single-machine on purpose: SQLite is ephemeral (no volume),
-# and passkeys + sessions are pinned to one host's local DB. Multiple
-# machines would diverge instantly.
+# This app is single-machine on purpose: SQLite lives on the rootfs (no
+# volume), and passkeys + sessions are pinned to one host's local DB.
+# Multiple machines would diverge instantly.
+#
+# Persistence model: the Dockerfile bakes backups/fly_seed.db into the image
+# as /app/app.db. Fly rebuilds the rootfs from the image on EVERY machine
+# start, so each restart/deploy rolls the DB back to that snapshot — anything
+# written on the machine since (accounts, responses) is lost unless pulled
+# first. To keep remote changes, refresh the seed before deploying:
+#
+#   rm backups/fly_seed.db && fly ssh sftp get /app/app.db backups/fly_seed.db
 #
 # Machine count is NOT set in fly.toml — fly tracks it in its own state.
 # After the first deploy, run once:

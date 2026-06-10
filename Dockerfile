@@ -11,6 +11,12 @@ COPY app ./app
 COPY templates ./templates
 COPY scripts ./scripts
 
+# Seed database baked into the image (fly machines reset the rootfs to the
+# image on every restart/deploy, so this snapshot IS the persistent state).
+# Refresh before deploying (sftp get refuses to overwrite, hence the rm):
+#   rm backups/fly_seed.db && fly ssh sftp get /app/app.db backups/fly_seed.db
+COPY backups/fly_seed.db ./app.db
+
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"
 
