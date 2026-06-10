@@ -601,3 +601,87 @@ def test_delete_questionnaire_cascades_assets_and_answers(test_session_factory) 
         assert db.scalar(
             select(func.count(Asset.id)).where(Asset.questionnaire_id == questionnaire_id)
         ) == 0
+
+
+def test_delete_all_questions_clears_draft_and_blocks_published(test_session_factory) -> None:
+    bootstrap_token = _bootstrap_superadmin_token(test_session_factory)
+
+    with TestClient(app) as super_client:
+        _signup(super_client, "root", token=bootstrap_token)
+
+        created = super_client.post(
+            "/api/admin/questionnaires",
+            json={
+                "title": "Delete All Target",
+                "description": None,
+                "instructions_markdown": "",
+            },
+        )
+        assert created.status_code == 200
+        questionnaire_id = created.json()["id"]
+        version_id = created.json()["latest_version_id"]
+
+        for position in (1, 2):
+            question = super_client.post(
+                f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+                json={
+                    "position": position,
+                    "prompt_text": f"Prompt {position}",
+                    "question_type": "single_choice",
+                    "is_required": True,
+                    "config": {},
+                    "choices": [
+                        {"position": 1, "label": "Yes", "value": "yes"},
+                        {"position": 2, "label": "No", "value": "no"},
+                    ],
+                },
+            )
+            assert question.status_code == 200
+
+        deleted = super_client.delete(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions"
+        )
+        assert deleted.status_code == 200
+        assert deleted.json()["deleted"] == 2
+
+        detail = super_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}"
+        )
+        assert detail.status_code == 200
+        assert detail.json()["questions"] == []
+
+        with test_session_factory() as db:
+            assert db.scalar(
+                select(func.count(Question.id)).where(
+                    Question.questionnaire_version_id == version_id
+                )
+            ) == 0
+            assert db.scalar(select(func.count(Choice.id))) == 0
+
+        recreated = super_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions",
+            json={
+                "position": 1,
+                "prompt_text": "Keep me",
+                "question_type": "short_text",
+                "is_required": False,
+                "config": {},
+                "choices": [],
+            },
+        )
+        assert recreated.status_code == 200
+
+        published = super_client.post(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/publish"
+        )
+        assert published.status_code == 200
+
+        blocked = super_client.delete(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}/questions"
+        )
+        assert blocked.status_code == 400
+
+        detail_after = super_client.get(
+            f"/api/admin/questionnaires/{questionnaire_id}/versions/{version_id}"
+        )
+        assert len(detail_after.json()["questions"]) == 1

@@ -478,6 +478,7 @@
 
             <div class="row">
               <button id="refresh-questions-btn" class="secondary">Refresh questions</button>
+              <button id="delete-all-questions-btn" class="ghost">Delete all questions</button>
             </div>
 
             <table>
@@ -1254,6 +1255,7 @@
       document.getElementById("apply-hide-to-existing-btn").disabled = !isDraft || !supportsHide;
       document.getElementById("save-edit-btn").disabled = !isDraft || !state.selectedQuestionId;
       document.getElementById("save-edit-bulk-btn").disabled = !isDraft || !state.selectedQuestionId;
+      document.getElementById("delete-all-questions-btn").disabled = !isDraft;
       if (!isDraft) {
         setStatus("version-status", "Selected version is not draft. Edit/import actions disabled.", "warn");
       }
@@ -2325,6 +2327,29 @@
 
     document.getElementById("refresh-questions-btn").addEventListener("click", async () => {
       try {
+        await loadVersionDetail();
+      } catch (error) {
+        setStatus("edit-status", error.message || String(error), "err");
+      }
+    });
+
+    document.getElementById("delete-all-questions-btn").addEventListener("click", async () => {
+      const count = (state.versionDetail?.questions || []).length;
+      const ok = window.confirm(`Delete all ${count} question(s) in this draft version?`);
+      if (!ok) {
+        return;
+      }
+      try {
+        if (!selectedVersionIsDraft()) {
+          throw new Error("Only draft versions are editable.");
+        }
+        const result = await requestJson(
+          `/api/admin/questionnaires/${QUESTIONNAIRE_ID}/versions/${state.selectedVersionId}/questions`,
+          { method: "DELETE" },
+        );
+        state.selectedQuestionId = null;
+        document.getElementById("selected-question-info").textContent = "No question selected.";
+        setStatus("edit-status", `Deleted ${result.deleted} question(s).`, "ok");
         await loadVersionDetail();
       } catch (error) {
         setStatus("edit-status", error.message || String(error), "err");

@@ -1514,6 +1514,29 @@ def delete_question(
     return {"ok": True}
 
 
+@router.delete("/{questionnaire_id}/versions/{version_id}/questions")
+def delete_all_questions(
+    questionnaire_id: str,
+    version_id: str,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    _get_accessible_questionnaire(db, questionnaire_id=questionnaire_id, user=current_user)
+    version = _get_version_for_questionnaire(db, questionnaire_id=questionnaire_id, version_id=version_id)
+    _ensure_draft(version)
+
+    version_question_ids = select(Question.id).where(
+        Question.questionnaire_version_id == version.id
+    )
+    db.execute(delete(Choice).where(Choice.question_id.in_(version_question_ids)))
+    result = db.execute(
+        delete(Question).where(Question.questionnaire_version_id == version.id)
+    )
+    version.updated_at = utcnow()
+    db.commit()
+    return {"deleted": result.rowcount or 0}
+
+
 @router.post(
     "/{questionnaire_id}/versions/{version_id}/publish",
     response_model=QuestionnaireVersionSummaryOut,
